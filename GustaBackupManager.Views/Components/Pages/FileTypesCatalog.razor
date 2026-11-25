@@ -1,0 +1,520 @@
+@page "/tipos-arquivo"
+@inject IFileTypeService FileTypeService
+@inject ICustomIconService CustomIconService
+@inject IBackupRepositoryService BackupRepositoryService
+@inject ISmbConnectionService SmbConnectionService
+@inject IAuthService AuthService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Tipos de Arquivo para Repositórios</PageTitle>
+
+<div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-4">
+    <div>
+        <MudText Typo="Typo.h5">Cadastro de Tipos de Arquivo para Repositórios</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Cadastre os repositórios e suas extensões. A escolha do repositório é feita na criação da pasta, com busca por nome, extensão ou descrição.
+        </MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined"
+               Color="Color.Primary"
+               Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.AccountTree"
+               Href="backups">
+        Ir para Árvore de Pastas
+    </MudButton>
+</div>
+
+<MudGrid Spacing="3">
+    @if (CanEdit)
+    {
+        <MudItem xs="12" lg="5">
+            <MudPaper Elevation="2" Class="pa-4">
+                <div class="d-flex align-center justify-space-between mb-3">
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@FolderIconCatalog.ResolveIcon(_editing.IconKey)" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6">
+                            @(_editing.Id == 0 ? "Novo Tipo de Arquivo" : $"Editando: {_editing.Name}")
+                        </MudText>
+                    </div>
+                    @if (_editing.Id != 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Modo Edição</MudChip>
+                    }
+                </div>
+
+                <SnackbarNotification @bind-Message="_errorMessage" Severity="Severity.Error" />
+
+                <MudTextField @bind-Value="_editing.Name"
+                              Label="Nome do Software / Tipo de Arquivo"
+                              Placeholder="Ex.: Studio 5000, TIA Portal, Inversor WEG"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Immediate="true"
+                              Required="true"
+                              Class="mb-3" />
+
+                <!-- GERENCIADOR INTERATIVO DE EXTENSOES -->
+                <MudPaper Outlined="true" Class="pa-3 mb-3">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Extensões Aceitas (@_extensionChips.Count)</MudText>
+
+                    <div class="d-flex gap-2 align-start mb-2">
+                        <MudTextField @bind-Value="_newExtensionInput"
+                                      Label="Adicionar extensão"
+                                      Placeholder="Ex.: .acd ou .mer; .apa"
+                                      HelperText="Digite uma ou mais extensões separadas por ';' e clique em Adicionar (ou Enter)."
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Immediate="true"
+                                      FullWidth="true"
+                                      OnKeyDown="OnExtensionInputKeyDown" />
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Secondary"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   Style="height: 40px;"
+                                   OnClick="AddExtensionsFromInput">
+                            Adicionar
+                        </MudButton>
+                    </div>
+
+                    @if (_extensionChips.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Warning">
+                            Nenhuma extensão adicionada ainda. Exemplos: <code>.acd</code>, <code>.mer</code>, <code>.zap18</code>, <code>.pdf</code>.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            @foreach (var ext in _extensionChips)
+                            {
+                                var currentExt = ext;
+                                <MudChip T="string"
+                                         Color="Color.Primary"
+                                         Variant="Variant.Filled"
+                                         Size="Size.Small"
+                                         OnClose="@((MudChip<string> _) => RemoveExtension(currentExt))">
+                                    @currentExt
+                                </MudChip>
+                            }
+                        </div>
+                    }
+                </MudPaper>
+
+                <!-- SELETOR DE ICONE -->
+                <MudPaper Outlined="true" Class="pa-3 mb-3">
+                    <div class="d-flex align-center justify-space-between gap-2 mb-2">
+                        <MudText Typo="Typo.subtitle2">Ícone do Tipo de Arquivo</MudText>
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.AddCircleOutline"
+                                   OnClick="OpenAddIconDialogAsync">
+                            Novo Ícone
+                        </MudButton>
+                    </div>
+                    <MudTextField @bind-Value="_iconSearch"
+                                  Placeholder="Buscar ícone por nome..."
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Clearable="true"
+                                  Immediate="true"
+                                  Class="mb-2" />
+                    <div class="icon-picker-grid" style="max-height: 230px; overflow-y: auto;">
+                        @foreach (var iconOpt in FilteredIconOptions)
+                        {
+                            var isSelected = string.Equals(_editing.IconKey, iconOpt.Key, StringComparison.OrdinalIgnoreCase);
+                            <MudTooltip Text="@iconOpt.Label">
+                                <div class="icon-picker-card @(isSelected ? "selected" : string.Empty)"
+                                     @onclick="@(() => _editing.IconKey = iconOpt.Key)">
+                                    <MudIcon Icon="@iconOpt.Svg"
+                                             Color="@(isSelected ? Color.Primary : Color.Default)"
+                                             Size="Size.Small" />
+                                    <div class="icon-picker-label">@iconOpt.Label</div>
+                                </div>
+                            </MudTooltip>
+                        }
+                    </div>
+                </MudPaper>
+
+                <MudTextField @bind-Value="_editing.Description"
+                              Label="Descrição / Softwares Compatíveis"
+                              Placeholder="Ex.: Projetos Studio 5000 Logix Designer para ControlLogix e CompactLogix"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Lines="2"
+                              Class="mb-3" />
+
+                <MudSwitch T="bool"
+                           @bind-Value="_editing.IsActive"
+                           Color="Color.Success"
+                           Label="Ativo (disponível ao configurar pastas de repositório)"
+                           Class="mb-2" />
+
+                @if (_editing.Id != 0 && SmbConnectionService.LastStatus.IsConnected)
+                {
+                    <MudCheckBox T="bool"
+                                 @bind-Value="_syncSmbFoldersOnSave"
+                                 Color="Color.Info"
+                                 Dense="true"
+                                 Class="mb-3"
+                                 Label="Atualizar automaticamente o folder.meta.json das pastas vinculadas no SMB" />
+                }
+
+                <div class="d-flex gap-2 mt-2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               FullWidth="true"
+                               Disabled="@_isBusy"
+                               OnClick="SaveAsync">
+                        @(_editing.Id == 0 ? "Cadastrar Tipo" : "Salvar Alterações")
+                    </MudButton>
+                    @if (_editing.Id != 0)
+                    {
+                        <MudButton Variant="Variant.Outlined" Disabled="@_isBusy" OnClick="ResetForm">Cancelar</MudButton>
+                    }
+                </div>
+            </MudPaper>
+        </MudItem>
+    }
+
+    <MudItem xs="12" lg="@(CanEdit ? 7 : 12)">
+        <MudPaper Elevation="2" Class="pa-4">
+            <div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-3">
+                <MudText Typo="Typo.h6">Tipos Cadastrados (@FilteredItems.Count() de @_items.Count)</MudText>
+            </div>
+
+            <MudGrid Spacing="2" Class="mb-3">
+                <MudItem xs="12" sm="9">
+                    <MudTextField @bind-Value="_searchText"
+                                  Placeholder="Buscar por nome, extensão (.acd) ou descrição..."
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Clearable="true"
+                                  Immediate="true" />
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string"
+                               @bind-Value="_statusFilter"
+                               Label="Status"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense">
+                        <MudSelectItem Value="@("Todos")">Todos</MudSelectItem>
+                        <MudSelectItem Value="@("Ativos")">Somente Ativos</MudSelectItem>
+                        <MudSelectItem Value="@("Inativos")">Somente Inativos</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <div class="crud-table-scroll">
+                <MudTable Items="FilteredItems" Hover="true" Dense="true" Striped="true" Loading="_isBusy" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Software / Tipo de Arquivo</MudTh>
+                        <MudTh>Extensões Aceitas</MudTh>
+                        <MudTh>Status</MudTh>
+                        @if (CanEdit)
+                        {
+                            <MudTh>Ações</MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Software / Tipo de Arquivo">
+                            <div class="d-flex align-start gap-2">
+                                <MudIcon Icon="@FolderIconCatalog.ResolveIcon(context.IconKey)"
+                                         Color="@(context.IsActive ? Color.Primary : Color.Default)"
+                                         Size="Size.Small"
+                                         Class="mt-1" />
+                                <div>
+                                    <MudText Typo="Typo.body2"><b>@context.Name</b></MudText>
+                                    @if (!string.IsNullOrWhiteSpace(context.Description))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Description</MudText>
+                                    }
+                                </div>
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="Extensões Aceitas">
+                            <div class="d-flex flex-wrap gap-1">
+                                @foreach (var ext in context.GetNormalizedExtensions())
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@ext</MudChip>
+                                }
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                                @(context.IsActive ? "Ativo" : "Inativo")
+                            </MudChip>
+                        </MudTd>
+                        @if (CanEdit)
+                        {
+                            <MudTd DataLabel="Ações" Style="white-space: nowrap;">
+                                <div style="display: inline-flex; flex-wrap: nowrap; align-items: center;">
+                                    <MudTooltip Text="Editar tipo de arquivo">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                       Size="Size.Small"
+                                                       Color="Color.Primary"
+                                                       OnClick="@(() => StartEdit(context))" />
+                                    </MudTooltip>
+                                    <MudTooltip Text="@(context.IsActive ? "Inativar" : "Ativar")">
+                                        <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.ToggleOn : Icons.Material.Filled.ToggleOff)"
+                                                       Size="Size.Small"
+                                                       Color="@(context.IsActive ? Color.Success : Color.Default)"
+                                                       OnClick="@(() => ToggleActiveAsync(context))" />
+                                    </MudTooltip>
+                                    @if (SmbConnectionService.LastStatus.IsConnected)
+                                    {
+                                        <MudTooltip Text="Sincronizar extensões nas pastas SMB vinculadas">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Sync"
+                                                           Size="Size.Small"
+                                                           Color="Color.Info"
+                                                           OnClick="@(() => SyncFoldersAsync(context))" />
+                                        </MudTooltip>
+                                    }
+                                    <MudTooltip Text="Excluir tipo de arquivo">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Size="Size.Small"
+                                                       Color="Color.Error"
+                                                       OnClick="@(() => DeleteAsync(context))" />
+                                    </MudTooltip>
+                                </div>
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
+                            Nenhum tipo de arquivo encontrado com os filtros aplicados.
+                        </MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<FileTypeDefinition> _items = [];
+    private FileTypeDefinition _editing = new() { IconKey = "Description" };
+    private List<string> _extensionChips = [];
+    private string _newExtensionInput = string.Empty;
+    private string _iconSearch = string.Empty;
+    private bool _syncSmbFoldersOnSave = true;
+
+    private string _searchText = string.Empty;
+    private string _statusFilter = "Todos";
+
+    private string? _errorMessage;
+    private bool _isBusy;
+
+    private bool CanEdit => AuthService.HasRole(UserRole.Operacao, UserRole.Admin);
+
+    private async Task OpenAddIconDialogAsync()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<AddCustomIconDialog>("Inserir Novo Ícone", options);
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled && result.Data is CustomIconDefinition created)
+        {
+            _editing.IconKey = created.Key;
+            Snackbar.Add($"Ícone '{created.Label}' cadastrado!", Severity.Success);
+        }
+    }
+
+    private IEnumerable<IconOption> FilteredIconOptions =>
+        FolderIconCatalog.AllIcons.Where(icon =>
+            string.IsNullOrWhiteSpace(_iconSearch) ||
+            icon.Label.Contains(_iconSearch, StringComparison.OrdinalIgnoreCase) ||
+            icon.Key.Contains(_iconSearch, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<FileTypeDefinition> FilteredItems =>
+        _items.Where(item =>
+            (string.IsNullOrWhiteSpace(_searchText) ||
+             item.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+             item.Extensions.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+             item.Description.Contains(_searchText, StringComparison.OrdinalIgnoreCase)) &&
+            (_statusFilter == "Todos" ||
+             (_statusFilter == "Ativos" && item.IsActive) ||
+             (_statusFilter == "Inativos" && !item.IsActive)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            _items = await FileTypeService.GetAllAsync(onlyActive: false);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OnExtensionInputKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            AddExtensionsFromInput();
+        }
+    }
+
+    private void AddExtensionsFromInput()
+    {
+        if (string.IsNullOrWhiteSpace(_newExtensionInput))
+            return;
+
+        var tokens = _newExtensionInput
+            .Split([';', ',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var raw in tokens)
+        {
+            var normalized = raw.StartsWith('.') ? raw.ToLowerInvariant() : "." + raw.ToLowerInvariant();
+            if (!_extensionChips.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            {
+                _extensionChips.Add(normalized);
+            }
+        }
+
+        _extensionChips = _extensionChips
+            .OrderBy(e => e, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _newExtensionInput = string.Empty;
+    }
+
+    private void RemoveExtension(string ext)
+    {
+        _extensionChips.RemoveAll(e => string.Equals(e, ext, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void StartEdit(FileTypeDefinition item)
+    {
+        _errorMessage = null;
+        _newExtensionInput = string.Empty;
+        _editing = new FileTypeDefinition
+        {
+            Id = item.Id,
+            Name = item.Name,
+            Extensions = item.Extensions,
+            Description = item.Description,
+            IconKey = string.IsNullOrWhiteSpace(item.IconKey) ? "Description" : item.IconKey,
+            IsActive = item.IsActive
+        };
+        _extensionChips = item.GetNormalizedExtensions();
+        _syncSmbFoldersOnSave = true;
+    }
+
+    private void ResetForm()
+    {
+        _errorMessage = null;
+        _newExtensionInput = string.Empty;
+        _extensionChips = [];
+        _editing = new FileTypeDefinition
+        {
+            IconKey = "Description",
+            IsActive = true
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        _errorMessage = null;
+
+        // Incorpora extensoes ainda digitadas no campo caso o usuario nao tenha clicado em "Adicionar"
+        if (!string.IsNullOrWhiteSpace(_newExtensionInput))
+        {
+            AddExtensionsFromInput();
+        }
+
+        _editing.Extensions = string.Join(";", _extensionChips);
+
+        var wasEditing = _editing.Id != 0;
+        _isBusy = true;
+        try
+        {
+            var (success, message, savedId) = await FileTypeService.SaveAsync(_editing);
+            if (!success)
+            {
+                _errorMessage = message;
+                return;
+            }
+
+            Snackbar.Add(message, Severity.Success);
+
+            if (wasEditing && _syncSmbFoldersOnSave && SmbConnectionService.LastStatus.IsConnected)
+            {
+                var syncResult = await BackupRepositoryService.SyncFileTypePolicyAcrossFoldersAsync(savedId);
+                Snackbar.Add(syncResult.Message, syncResult.Success ? Severity.Info : Severity.Warning);
+            }
+
+            ResetForm();
+            await LoadAsync();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ToggleActiveAsync(FileTypeDefinition item)
+    {
+        _isBusy = true;
+        try
+        {
+            var (success, message) = await FileTypeService.ToggleActiveAsync(item.Id);
+            Snackbar.Add(message, success ? Severity.Success : Severity.Error);
+            await LoadAsync();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SyncFoldersAsync(FileTypeDefinition item)
+    {
+        _isBusy = true;
+        try
+        {
+            var res = await BackupRepositoryService.SyncFileTypePolicyAcrossFoldersAsync(item.Id);
+            Snackbar.Add(res.Message, res.Success ? Severity.Info : Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteAsync(FileTypeDefinition item)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"Deseja excluir o tipo de arquivo '{item.Name}'? As pastas já existentes no SMB manterão suas extensões gravadas no folder.meta.json."
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar exclusão", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        var (success, message) = await FileTypeService.DeleteAsync(item.Id);
+        if (!success)
+        {
+            _errorMessage = message;
+            return;
+        }
+
+        Snackbar.Add(message, Severity.Success);
+        if (_editing.Id == item.Id) ResetForm();
+        await LoadAsync();
+    }
+}

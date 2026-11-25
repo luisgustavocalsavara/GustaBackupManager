@@ -1,0 +1,199 @@
+@inject ICustomIconService CustomIconService
+@inject INativeFileDialogService FileDialogService
+
+<MudDialog>
+    <DialogContent>
+        <SnackbarNotification @bind-Message="_errorMessage" Severity="Severity.Error" />
+
+        <MudTextField @bind-Value="_label"
+                      Label="Nome do Novo Ícone"
+                      Placeholder="Ex.: CLP Rockwell, Inversor WEG, Válvula..."
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      Required="true"
+                      Class="mb-3" />
+
+        <MudRadioGroup T="string" @bind-Value="_mode" Class="mb-2">
+            <MudRadio T="string" Value="@("Arquivo")" Color="Color.Primary" Dense="true">
+                Importar arquivo de imagem / SVG (.svg, .ico, .png, .jpg)
+            </MudRadio>
+            <MudRadio T="string" Value="@("SVG")" Color="Color.Primary" Dense="true">
+                Colar código SVG (&lt;svg&gt; ou &lt;path&gt;)
+            </MudRadio>
+        </MudRadioGroup>
+
+        @if (_mode == "Arquivo")
+        {
+            <MudPaper Outlined="true" Class="pa-3 mb-3">
+                <div class="d-flex flex-wrap align-center justify-space-between gap-2">
+                    <div>
+                        @if (_selectedFile is null)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Nenhum arquivo selecionado.</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Formatos aceitos: .svg, .ico, .png, .jpg, .webp (máx. 512 KB)</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2"><b>@_selectedFile.FileName</b></MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@_selectedFile.FullPath</MudText>
+                        }
+                    </div>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.UploadFile"
+                               OnClick="PickIconFileAsync">
+                        Selecionar Arquivo
+                    </MudButton>
+                </div>
+            </MudPaper>
+        }
+        else
+        {
+            <MudTextField @bind-Value="_svgCode"
+                          @bind-Value:after="UpdateSvgPreview"
+                          Label="Código SVG"
+                          Placeholder='<svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>'
+                          HelperText="Cole um trecho <svg>...</svg> ou <path d=&quot;...&quot; />."
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Lines="4"
+                          Immediate="true"
+                          Class="mb-3" />
+        }
+
+        <!-- PRÉVIA DO NOVO ÍCONE -->
+        <MudPaper Outlined="true" Class="pa-3">
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                Prévia do ícone na interface:
+            </MudText>
+            @if (string.IsNullOrWhiteSpace(_previewSvg))
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Selecione um arquivo ou cole um código SVG acima para visualizar.
+                </MudText>
+            }
+            else
+            {
+                <div class="d-flex align-center gap-4">
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@_previewSvg" Color="@PreviewColor" Size="Size.Small" />
+                        <MudIcon Icon="@_previewSvg" Color="@PreviewColor" Size="Size.Medium" />
+                        <MudIcon Icon="@_previewSvg" Color="@PreviewColor" Size="Size.Large" />
+                    </div>
+                    <MudText Typo="Typo.body2">
+                        <b>@(string.IsNullOrWhiteSpace(_label) ? "Novo Ícone" : _label)</b>
+                    </MudText>
+                </div>
+            }
+        </MudPaper>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@_isSaving"
+                   OnClick="SaveAsync">
+            Cadastrar Ícone
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public Color PreviewColor { get; set; } = Color.Primary;
+
+    private string _label = string.Empty;
+    private string _mode = "Arquivo";
+    private SelectedLocalFile? _selectedFile;
+    private string _svgCode = string.Empty;
+    private string _previewSvg = string.Empty;
+    private string? _errorMessage;
+    private bool _isSaving;
+
+    private async Task PickIconFileAsync()
+    {
+        _errorMessage = null;
+        var picked = await FileDialogService.PickFileAsync(
+            "Selecionar arquivo de ícone",
+            [".svg", ".ico", ".png", ".jpg", ".jpeg", ".webp"]);
+
+        if (picked is null) return;
+
+        _selectedFile = picked;
+        if (string.IsNullOrWhiteSpace(_label))
+        {
+            _label = Path.GetFileNameWithoutExtension(picked.FileName);
+        }
+
+        try
+        {
+            var parsed = await CustomIconService.BuildPreviewFromFileAsync(picked.FullPath);
+            if (!parsed.Success)
+            {
+                _errorMessage = parsed.Message;
+                _previewSvg = string.Empty;
+                return;
+            }
+
+            _previewSvg = parsed.SvgMarkup;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Não foi possível ler o arquivo: {ex.Message}";
+            _previewSvg = string.Empty;
+        }
+    }
+
+    private void UpdateSvgPreview()
+    {
+        _errorMessage = null;
+        if (string.IsNullOrWhiteSpace(_svgCode))
+        {
+            _previewSvg = string.Empty;
+            return;
+        }
+
+        var parsed = CustomIconService.BuildPreviewFromSvgCode(_svgCode);
+        _previewSvg = parsed.Success ? parsed.SvgMarkup : string.Empty;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task SaveAsync()
+    {
+        _errorMessage = null;
+        if (string.IsNullOrWhiteSpace(_label))
+        {
+            _errorMessage = "Informe o nome do novo ícone.";
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var result = _mode == "Arquivo"
+                ? await CustomIconService.AddFromFileAsync(_label, _selectedFile?.FullPath ?? string.Empty)
+                : await CustomIconService.AddFromSvgCodeAsync(_label, _svgCode);
+
+            if (!result.Success || result.Created is null)
+            {
+                _errorMessage = result.Message;
+                return;
+            }
+
+            var all = await CustomIconService.GetAllAsync();
+            FolderIconCatalog.SetCustomIcons(all);
+
+            MudDialog.Close(DialogResult.Ok(result.Created));
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

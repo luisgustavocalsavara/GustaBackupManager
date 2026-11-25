@@ -1,0 +1,204 @@
+@inject INativeFileDialogService FileDialogService
+
+<MudDialog>
+    <DialogContent>
+        <SnackbarNotification @bind-Message="_errorMessage" Severity="Severity.Error" />
+
+        <MudPaper Outlined="true" Class="pa-3 mb-3">
+            <MudText Typo="Typo.body2">Pasta destino: <b>@TargetFolderName</b></MudText>
+        </MudPaper>
+
+        <MudText Typo="Typo.caption" Class="d-block mb-1">Extensões permitidas nesta pasta:</MudText>
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            @foreach (var ext in AllowedExtensions)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">@ext</MudChip>
+            }
+        </div>
+
+        <MudPaper Outlined="true" Class="pa-3 mb-3">
+            <div class="d-flex flex-wrap align-center justify-space-between gap-2">
+                <div>
+                    @if (_selectedFile is null)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Nenhum arquivo selecionado.</MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2"><b>@_selectedFile.FileName</b></MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_selectedFile.FullPath</MudText>
+                    }
+                </div>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.FolderOpen"
+                           OnClick="PickFileAsync">
+                    Selecionar Arquivo
+                </MudButton>
+            </div>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-3 mb-3 d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.DriveFileRenameOutline" Color="Color.Success" />
+            <div>
+                <MudText Typo="Typo.caption" Class="d-block">
+                    O nome será gerado automaticamente pelo caminho da pasta e pela data/hora:
+                </MudText>
+                <code>@PreviewAutoFileName</code>
+            </div>
+        </MudPaper>
+
+        <MudGrid Spacing="2">
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_description"
+                              Label="Observação da alteração"
+                              Placeholder="Descreva a alteração realizada neste backup..."
+                              HelperText="Obrigatória, exceto quando marcar Backup de Rotina."
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Lines="2" />
+                <MudCheckBox T="bool"
+                             @bind-Value="_isRoutineBackup"
+                             Color="Color.Primary"
+                             Dense="true"
+                             Label="Backup de Rotina" />
+            </MudItem>
+        </MudGrid>
+
+        <MudExpansionPanels Class="mb-3">
+            <MudExpansionPanel Text="Opções avançadas">
+                <MudCheckBox T="bool"
+                             @bind-Value="_useCustomTimestamp"
+                             Color="Color.Primary"
+                             Dense="true"
+                             Label="Usar data e hora personalizada no nome do arquivo" />
+                @if (_useCustomTimestamp)
+                {
+                    <MudGrid Spacing="2" Class="mt-1">
+                        <MudItem xs="12" sm="6">
+                            <MudDatePicker @bind-Date="_customTimestampDate"
+                                           Label="Data do arquivo"
+                                           DateFormat="dd/MM/yyyy"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTimePicker @bind-Time="_customTimestampTime"
+                                           Label="Hora do arquivo"
+                                           TimeFormat="HH:mm:ss"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense" />
+                        </MudItem>
+                    </MudGrid>
+                }
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Success"
+                   Variant="Variant.Filled"
+                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                   Disabled="@(_selectedFile is null)"
+                   OnClick="Submit">
+            Enviar para Servidor SMB
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public string TargetFolderPath { get; set; } = string.Empty;
+
+    [Parameter]
+    public string TargetFolderName { get; set; } = string.Empty;
+
+    [Parameter]
+    public string FolderNamingPrefix { get; set; } = string.Empty;
+
+    [Parameter]
+    public List<string> AllowedExtensions { get; set; } = [];
+
+    private SelectedLocalFile? _selectedFile;
+    private string _description = string.Empty;
+    private bool _isRoutineBackup;
+    private bool _useCustomTimestamp;
+    private DateTime? _customTimestampDate = DateTime.Today;
+    private TimeSpan? _customTimestampTime = DateTime.Now.TimeOfDay;
+    private string? _errorMessage;
+
+    private string PreviewAutoFileName =>
+        FolderNameHelper.FormatPreviewFileName(
+            FolderNamingPrefix,
+            _selectedFile?.Extension ?? AllowedExtensions.FirstOrDefault() ?? ".ext",
+            GetCustomTimestamp() ?? DateTime.Now);
+
+    private DateTime? GetCustomTimestamp() =>
+        _useCustomTimestamp && _customTimestampDate.HasValue && _customTimestampTime.HasValue
+            ? _customTimestampDate.Value.Date.Add(_customTimestampTime.Value)
+            : null;
+
+    private async Task PickFileAsync()
+    {
+        _errorMessage = null;
+        if (AllowedExtensions.Count == 0)
+        {
+            _errorMessage = "Esta pasta não possui extensões permitidas configuradas. Configure os tipos de arquivo antes de enviar um backup.";
+            return;
+        }
+
+        var picked = await FileDialogService.PickFileAsync(
+            $"Selecionar backup para {TargetFolderName}",
+            AllowedExtensions);
+
+        if (picked is null) return;
+
+        if (AllowedExtensions.Count > 0 &&
+            !AllowedExtensions.Contains(picked.Extension, StringComparer.OrdinalIgnoreCase))
+        {
+            _errorMessage = $"A extensão '{picked.Extension}' não é permitida nesta pasta. Extensões aceitas: {string.Join(", ", AllowedExtensions)}.";
+            _selectedFile = null;
+            return;
+        }
+
+        _selectedFile = picked;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        _errorMessage = null;
+        if (_selectedFile is null)
+        {
+            _errorMessage = "Selecione um arquivo no computador antes de enviar.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_description) && !_isRoutineBackup)
+        {
+            _errorMessage = "Informe uma observação da alteração ou marque 'Backup de Rotina'.";
+            return;
+        }
+
+        if (_useCustomTimestamp && !GetCustomTimestamp().HasValue)
+        {
+            _errorMessage = "Informe uma data e hora válidas para o nome do arquivo.";
+            return;
+        }
+
+        var request = new BackupUploadRequest
+        {
+            TargetFolderPath = TargetFolderPath,
+            SourceLocalFilePath = _selectedFile.FullPath,
+            CustomFileTimestamp = GetCustomTimestamp(),
+            Description = _description,
+            IsRoutineBackup = _isRoutineBackup
+        };
+
+        MudDialog.Close(DialogResult.Ok(request));
+    }
+}

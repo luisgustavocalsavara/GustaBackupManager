@@ -1,0 +1,32 @@
+@inject ISnackbar Snackbar
+
+@code {
+    [Parameter]
+    public string? Message { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> MessageChanged { get; set; }
+
+    [Parameter]
+    public Severity Severity { get; set; } = Severity.Info;
+
+    private string? _lastShownMessage;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Message))
+        {
+            _lastShownMessage = null;
+            return;
+        }
+
+        if (!MessageChanged.HasDelegate && Message == _lastShownMessage)
+            return;
+
+        _lastShownMessage = Message;
+        Snackbar.Add(Message, Severity);
+
+        if (MessageChanged.HasDelegate)
+            await MessageChanged.InvokeAsync(null);
+    }
+}

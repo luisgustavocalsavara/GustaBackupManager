@@ -1,0 +1,105 @@
+@page "/"
+@inject IAuthService AuthService
+@inject ISettingsService SettingsService
+@inject ISmbConnectionService SmbConnectionService
+@inject IFileTypeService FileTypeService
+
+<PageTitle>Início - Backups Industriais</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Bem-vindo, @AuthService.CurrentUser?.FullName!</MudText>
+<MudText Class="mb-4" Color="Color.Secondary">
+    Central de armazenamento e rastreabilidade de backups de CLPs, IHMs, Inversores de Frequência e Manuais em servidor de arquivos SMB.
+</MudText>
+
+<MudPaper Outlined="true" Class="pa-3 mb-6">
+    <div class="d-flex flex-wrap align-center justify-space-between gap-2">
+        <MudText Color="@(_status.IsConnected ? Color.Success : Color.Warning)">
+            <b>Status do Servidor SMB:</b> @_status.Message
+        </MudText>
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" Href="configuracao-smb">
+            Configurar Conexão
+        </MudButton>
+    </div>
+</MudPaper>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4" Style="height: 100%;">
+            <div class="d-flex align-center mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.AccountTree" Color="Color.Primary" Class="mr-2" />
+                <MudText Typo="Typo.h6">Árvore & Backups</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Navegue por Fábricas, Localizações, Equipamentos, Componentes e Documentações no <b>MudTreeView</b>.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Href="backups" StartIcon="@Icons.Material.Filled.FolderOpen">
+                Abrir Explorador
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4" Style="height: 100%;">
+            <div class="d-flex align-center mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Palette" Color="Color.Info" Class="mr-2" />
+                <MudText Typo="Typo.h6">Ícones & Cores</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Personalize o ícone e a cor padrão de cada categoria de pasta para aplicação automática na árvore.
+            </MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Info" Size="Size.Small" Href="categorias-pastas" StartIcon="@Icons.Material.Filled.Palette">
+                Configurar Categorias
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4" Style="height: 100%;">
+            <div class="d-flex align-center mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Extension" Color="Color.Secondary" Class="mr-2" />
+                <MudText Typo="Typo.h6">Softwares e Tipos (@_fileTypeCount)</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Cadastre cada software ou tipo de arquivo por categoria e defina suas extensões aceitas, como Studio 5000 (<code>.acd</code>) ou TIA Portal.
+            </MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small" Href="tipos-arquivo" StartIcon="@Icons.Material.Filled.Settings">
+                Gerenciar Tipos
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Elevation="2" Class="pa-4" Style="height: 100%;">
+            <div class="d-flex align-center mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Lan" Color="Color.Success" Class="mr-2" />
+                <MudText Typo="Typo.h6">Servidor SMB</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Configure o compartilhamento UNC (<code>\\servidor\pasta</code>), credenciais protegidas via DPAPI e teste a rede.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" Href="configuracao-smb" StartIcon="@Icons.Material.Filled.Storage">
+                Configurar SMB
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private SmbConnectionStatus _status = new(false, false, string.Empty, "Verificando conexão...");
+    private int _fileTypeCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var types = await FileTypeService.GetAllAsync(onlyActive: true);
+        _fileTypeCount = types.Count;
+
+        if (!string.IsNullOrWhiteSpace(SettingsService.Current.Smb.RootPath))
+        {
+            _status = await SmbConnectionService.EnsureConnectedAsync();
+        }
+        else
+        {
+            _status = SmbConnectionService.LastStatus;
+        }
+    }
+}

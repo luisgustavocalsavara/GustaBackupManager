@@ -1,0 +1,58 @@
+@implements IDisposable
+@inject IAuthService AuthService
+
+<MudNavMenu>
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Início</MudNavLink>
+
+    <MudDivider Class="my-2" />
+    <MudText Typo="Typo.caption" Class="px-4">REPOSITÓRIO SMB</MudText>
+    <MudNavLink Href="backups" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AccountTree">
+        Árvore de Pastas & Backups
+    </MudNavLink>
+
+    <MudDivider Class="my-2" />
+    <MudText Typo="Typo.caption" Class="px-4">CADASTROS E REDE</MudText>
+    <MudNavLink Href="categorias-pastas" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Palette">
+        Ícones e Cores por Categoria
+    </MudNavLink>
+    <MudNavLink Href="tipos-arquivo" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Extension">
+        Tipos de Repositório
+    </MudNavLink>
+    <MudNavLink Href="configuracao-smb" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Lan">
+        Configuração Servidor SMB
+    </MudNavLink>
+
+    @if (AuthService.HasRole(UserRole.Admin))
+    {
+        <MudDivider Class="my-2" />
+        <MudText Typo="Typo.caption" Class="px-4">ADMINISTRAÇÃO</MudText>
+        <MudNavLink Href="usuarios" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ManageAccounts">
+            Usuários e Permissões
+        </MudNavLink>
+    }
+
+    <MudDivider Class="my-2" />
+
+    <MudNavLink Icon="@Icons.Material.Filled.Logout"
+                IconColor="Color.Warning"
+                OnClick="AuthService.Logout">
+        Trocar Usuário
+    </MudNavLink>
+</MudNavMenu>
+
+@code {
+    protected override void OnInitialized()
+    {
+        AuthService.AuthStateChanged += OnAuthStateChanged;
+    }
+
+    private void OnAuthStateChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        AuthService.AuthStateChanged -= OnAuthStateChanged;
+    }
+}

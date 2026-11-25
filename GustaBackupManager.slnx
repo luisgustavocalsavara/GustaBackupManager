@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="GustaBackupManager.Application/GustaBackupManager.App.csproj" />
+  <Project Path="GustaBackupManager.Models/GustaBackupManager.Models.csproj" />
+  <Project Path="GustaBackupManager.Services/GustaBackupManager.Services.csproj" />
+  <Project Path="GustaBackupManager.Views/GustaBackupManager.Views.csproj" />
+  <Project Path="GustaBackupManager/GustaBackupManager.csproj" />
+</Solution>

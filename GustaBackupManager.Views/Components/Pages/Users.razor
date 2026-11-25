@@ -1,0 +1,200 @@
+@page "/usuarios"
+@inject IAuthService AuthService
+@inject IDialogService DialogService
+
+<PageTitle>Usuários e Permissões</PageTitle>
+
+@if (!AuthService.HasRole(UserRole.Admin))
+{
+    <SnackbarNotification Message="Você não tem permissão de Administrador para acessar esta página." Severity="Severity.Error" />
+}
+else
+{
+    <MudText Typo="Typo.h5" Class="mb-4">Gerenciamento de Usuários e Permissões</MudText>
+
+    <MudGrid>
+        <MudItem xs="12" md="5">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Cadastrar Novo Usuário</MudText>
+
+                <SnackbarNotification @bind-Message="_errorMessage" Severity="Severity.Error" />
+                <SnackbarNotification @bind-Message="_successMessage" Severity="Severity.Success" />
+
+                <MudTextField @bind-Value="_newFullName" Label="Nome Completo" Variant="Variant.Outlined" Class="mb-3" />
+                <MudTextField @bind-Value="_newUsername" Label="Login (Username)" Variant="Variant.Outlined" Class="mb-3" />
+                <MudTextField @bind-Value="_newPassword" Label="Senha (mínimo 8 caracteres)" InputType="InputType.Password" Variant="Variant.Outlined" Class="mb-3" />
+
+                <MudSelect T="UserRole" @bind-Value="_newRole" Label="Permissão" Variant="Variant.Outlined" Class="mb-4">
+                    <MudSelectItem Value="UserRole.Manutencao">Manutenção (Visualizar e baixar backups)</MudSelectItem>
+                    <MudSelectItem Value="UserRole.Operacao">Operação (Criar pastas e enviar backups)</MudSelectItem>
+                    <MudSelectItem Value="UserRole.Admin">Admin (Acesso total + usuários)</MudSelectItem>
+                </MudSelect>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.PersonAdd"
+                           FullWidth="true"
+                           Disabled="@_isLoading"
+                           OnClick="RegisterUserAsync">
+                    Cadastrar Usuário
+                </MudButton>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Usuários Cadastrados</MudText>
+
+                <MudTable Items="_users" Hover="true" Dense="true" Striped="true" Loading="_isLoading" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Usuário</MudTh>
+                        <MudTh>Nome</MudTh>
+                        <MudTh>Permissão</MudTh>
+                        <MudTh>Criado em</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Usuário"><b>@context.Username</b></MudTd>
+                        <MudTd DataLabel="Nome">@context.FullName</MudTd>
+                        <MudTd DataLabel="Permissão">
+                            <div class="d-flex align-center gap-2">
+                                <MudSelect T="UserRole"
+                                           Value="@GetSelectedRole(context)"
+                                           ValueChanged="@((UserRole role) => SetSelectedRole(context.Id, role))"
+                                           Dense="true"
+                                           Margin="Margin.Dense"
+                                           Disabled="@(_isLoading || AuthService.CurrentUser?.Id == context.Id)">
+                                    <MudSelectItem Value="UserRole.Manutencao">Manutenção</MudSelectItem>
+                                    <MudSelectItem Value="UserRole.Operacao">Operação</MudSelectItem>
+                                    <MudSelectItem Value="UserRole.Admin">Admin</MudSelectItem>
+                                </MudSelect>
+                                @if (AuthService.CurrentUser?.Id != context.Id)
+                                {
+                                    <MudTooltip Text="Salvar permissão">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Save"
+                                                       Color="Color.Primary"
+                                                       Size="Size.Small"
+                                                       Disabled="@(_isLoading || GetSelectedRole(context) == context.Role)"
+                                                       OnClick="@(() => SaveUserRoleAsync(context))" />
+                                    </MudTooltip>
+                                }
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="Criado em">@context.CreatedAt.ToString("dd/MM/yyyy HH:mm")</MudTd>
+                        <MudTd>
+                            @if (context.Username.ToLower() != "admin")
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               Size="Size.Small"
+                                               OnClick="@(() => DeleteUserAsync(context.Id, context.Username))" />
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private string _newUsername = string.Empty;
+    private string _newPassword = string.Empty;
+    private string _newFullName = string.Empty;
+    private UserRole _newRole = UserRole.Operacao;
+    private readonly Dictionary<int, UserRole> _selectedRoles = [];
+    private string? _errorMessage;
+    private string? _successMessage;
+    private bool _isLoading;
+    private List<User> _users = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsersAsync();
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _users = await AuthService.GetAllUsersAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task RegisterUserAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        _isLoading = true;
+        try
+        {
+            var (success, message) = await AuthService.RegisterUserAsync(_newUsername, _newPassword, _newFullName, _newRole);
+            if (!success)
+            {
+                _errorMessage = message;
+            }
+            else
+            {
+                _successMessage = message;
+                _newUsername = string.Empty;
+                _newPassword = string.Empty;
+                _newFullName = string.Empty;
+                _newRole = UserRole.Operacao;
+                _users = await AuthService.GetAllUsersAsync();
+                _selectedRoles.Clear();
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private UserRole GetSelectedRole(User user) => _selectedRoles.TryGetValue(user.Id, out var role) ? role : user.Role;
+
+    private void SetSelectedRole(int userId, UserRole role) => _selectedRoles[userId] = role;
+
+    private async Task SaveUserRoleAsync(User user)
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        _isLoading = true;
+        try
+        {
+            var (success, message) = await AuthService.ChangeUserRoleAsync(user.Id, GetSelectedRole(user));
+            if (!success)
+            {
+                _errorMessage = message;
+                _selectedRoles.Remove(user.Id);
+                return;
+            }
+
+            _successMessage = message;
+            _users = await AuthService.GetAllUsersAsync();
+            _selectedRoles.Clear();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task DeleteUserAsync(int userId, string username)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"Deseja realmente excluir o usuário '{username}'?"
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar exclusão", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        await AuthService.DeleteUserAsync(userId);
+        _users = await AuthService.GetAllUsersAsync();
+    }
+}

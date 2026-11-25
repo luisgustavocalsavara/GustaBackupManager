@@ -1,0 +1,282 @@
+@page "/configuracao-smb"
+@inject ISettingsService SettingsService
+@inject ISmbConnectionService SmbConnectionService
+@inject INativeFileDialogService FileDialogService
+@inject IBackupRepositoryService BackupService
+@inject IAuthService AuthService
+@inject ISnackbar Snackbar
+
+<PageTitle>Configuração Servidor SMB</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Configuração do Servidor de Arquivos (SMB)</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Configure o caminho UNC de rede (ex.: <code>\\192.168.1.50\BackupsAutomacao</code>) ou uma pasta local para testes.
+</MudText>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="7">
+        <MudPaper Elevation="2" Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-3">Parâmetros de Conexão</MudText>
+
+            <SnackbarNotification @bind-Message="_errorMessage" Severity="Severity.Error" />
+
+            <div class="d-flex gap-2 align-start mb-3">
+                <MudTextField @bind-Value="_rootPath"
+                              Label="Caminho do Servidor SMB (UNC) ou Pasta Local"
+                              Placeholder="\\192.168.1.50\BackupsAutomacao"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              FullWidth="true"
+                              Disabled="@(!CanConfigure)" />
+
+                <MudTooltip Text="Escolher pasta local/mapeada">
+                    <MudIconButton Icon="@Icons.Material.Filled.FolderOpen"
+                                   Color="Color.Primary"
+                                   Variant="Variant.Outlined"
+                                   Disabled="@(!CanConfigure)"
+                                   OnClick="PickFolderAsync" />
+                </MudTooltip>
+            </div>
+
+            <MudSwitch T="bool"
+                       @bind-Value="_useIntegratedAuth"
+                       Color="Color.Primary"
+                       Disabled="@(!CanConfigure)"
+                       Label="Usar autenticação integrada do Windows (credenciais da sessão atual)"
+                       Class="mb-3" />
+
+            @if (!_useIntegratedAuth)
+            {
+                <MudGrid Spacing="2" Class="mb-3">
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_domain"
+                                      Label="Domínio (opcional)"
+                                      Placeholder="EX.: FABRICA"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(!CanConfigure)" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_username"
+                                      Label="Usuário SMB"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(!CanConfigure)" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_plainPassword"
+                                      Label="Senha SMB"
+                                      InputType="InputType.Password"
+                                      Placeholder="@(_hasSavedPassword ? "(senha salva - digite para alterar)" : string.Empty)"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Disabled="@(!CanConfigure)" />
+                    </MudItem>
+                </MudGrid>
+            }
+
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           Disabled="@(_isBusy || !CanConfigure)"
+                           OnClick="SaveAndConnectAsync">
+                    Salvar e Conectar
+                </MudButton>
+
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Info"
+                           StartIcon="@Icons.Material.Filled.NetworkCheck"
+                           Disabled="@_isBusy"
+                           OnClick="TestConnectionAsync">
+                    Testar Conexão
+                </MudButton>
+
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Warning"
+                           StartIcon="@Icons.Material.Filled.LinkOff"
+                           Disabled="@(_isBusy || !CanConfigure)"
+                           OnClick="DisconnectAsync">
+                    Desconectar SMB
+                </MudButton>
+            </div>
+
+            @if (!CanConfigure)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block mt-3">
+                    Somente usuários com perfil <b>Operação</b> ou <b>Admin</b> podem alterar o servidor SMB.
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Elevation="2" Class="pa-4 mb-3">
+            <MudText Typo="Typo.h6" Class="mb-3">Status Atual</MudText>
+
+            <MudChip T="string"
+                     Color="@(_lastStatus.IsConnected ? Color.Success : Color.Warning)"
+                     Variant="Variant.Filled"
+                     Class="mb-3">
+                @(_lastStatus.IsConnected ? "CONECTADO" : "DESCONECTADO")
+            </MudChip>
+
+            <MudText Typo="Typo.body2" Class="mb-2">@_lastStatus.Message</MudText>
+
+            @if (_lastStatus.Win32ErrorCode.HasValue)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Error">
+                    Código Win32 SMB: @_lastStatus.Win32ErrorCode
+                </MudText>
+            }
+        </MudPaper>
+
+        <MudPaper Elevation="2" Class="pa-4">
+            <MudText Typo="Typo.h6" Class="mb-2">Inicialização Rápida</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Cria uma hierarquia de exemplo (Área → Linha 01 → Envasadora → Pastas de CLP, IHM, Inversores e Manuais) com arquivos <code>folder.meta.json</code> já configurados.
+            </MudText>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                       Disabled="@(_isBusy || !_lastStatus.IsConnected || !CanConfigure)"
+                       OnClick="CreateSampleStructureAsync">
+                Criar Estrutura de Exemplo
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _rootPath = string.Empty;
+    private string _domain = string.Empty;
+    private string _username = string.Empty;
+    private string _plainPassword = string.Empty;
+    private bool _useIntegratedAuth = true;
+    private bool _hasSavedPassword;
+    private bool _isBusy;
+    private string? _errorMessage;
+    private SmbConnectionStatus _lastStatus = new(false, false, string.Empty, "Não verificado.");
+
+    private bool CanConfigure => AuthService.HasRole(UserRole.Operacao, UserRole.Admin);
+
+    protected override void OnInitialized()
+    {
+        var smb = SettingsService.Current.Smb;
+        _rootPath = smb.RootPath;
+        _domain = smb.Domain;
+        _username = smb.Username;
+        _useIntegratedAuth = smb.UseIntegratedAuth;
+        _hasSavedPassword = !string.IsNullOrWhiteSpace(smb.ProtectedPassword);
+        _lastStatus = SmbConnectionService.LastStatus;
+    }
+
+    private async Task PickFolderAsync()
+    {
+        var folder = await FileDialogService.PickFolderAsync("Selecione a pasta raiz de backups", _rootPath);
+        if (!string.IsNullOrWhiteSpace(folder))
+            _rootPath = folder;
+    }
+
+    private SmbConnectionSettings BuildDraftSettings()
+    {
+        var protectedPassword = SettingsService.Current.Smb.ProtectedPassword;
+        if (!_useIntegratedAuth && !string.IsNullOrEmpty(_plainPassword))
+        {
+            protectedPassword = SmbConnectionService.ProtectSecret(_plainPassword);
+        }
+
+        return new SmbConnectionSettings
+        {
+            RootPath = _rootPath.Trim(),
+            Domain = _domain.Trim(),
+            Username = _username.Trim(),
+            UseIntegratedAuth = _useIntegratedAuth,
+            ProtectedPassword = _useIntegratedAuth ? string.Empty : protectedPassword
+        };
+    }
+
+    private async Task SaveAndConnectAsync()
+    {
+        _errorMessage = null;
+        _isBusy = true;
+        try
+        {
+            var draft = BuildDraftSettings();
+            var status = await SmbConnectionService.ConnectAndVerifyAsync(
+                draft,
+                string.IsNullOrEmpty(_plainPassword) ? null : _plainPassword);
+
+            _lastStatus = status;
+
+            if (!status.IsConnected)
+            {
+                _errorMessage = status.Message;
+                return;
+            }
+
+            SettingsService.UpdateSmbSettings(draft);
+            _hasSavedPassword = !string.IsNullOrWhiteSpace(draft.ProtectedPassword);
+            _plainPassword = string.Empty;
+            Snackbar.Add("Configuração SMB salva e conexão validada com sucesso!", Severity.Success);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        _errorMessage = null;
+        _isBusy = true;
+        try
+        {
+            var draft = BuildDraftSettings();
+            _lastStatus = await SmbConnectionService.ConnectAndVerifyAsync(
+                draft,
+                string.IsNullOrEmpty(_plainPassword) ? null : _plainPassword);
+
+            if (_lastStatus.IsConnected)
+                Snackbar.Add("Conexão SMB validada com sucesso!", Severity.Success);
+            else
+                _errorMessage = _lastStatus.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            var res = await SmbConnectionService.DisconnectAsync(_rootPath);
+            _lastStatus = SmbConnectionService.LastStatus;
+            Snackbar.Add(res.Message, res.Success ? Severity.Info : Severity.Warning);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CreateSampleStructureAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            var res = await BackupService.SeedExamplePlantStructureAsync();
+            if (res.Success)
+                Snackbar.Add(res.Message, Severity.Success);
+            else
+                _errorMessage = res.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

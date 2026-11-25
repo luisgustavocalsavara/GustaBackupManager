@@ -1,0 +1,947 @@
+@page "/backups"
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject IBackupRepositoryService BackupService
+@inject ISmbConnectionService SmbConnectionService
+@inject INativeFileDialogService FileDialogService
+@inject IAuthService AuthService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IFileTypeService FileTypeService
+
+<PageTitle>Árvore de Pastas & Backups</PageTitle>
+
+<div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-3">
+    <div>
+        <MudText Typo="Typo.h5">Árvore de Fábricas, Localidades & Backups (SMB)</MudText>
+        <MudText Typo="Typo.caption" Color="Color.Secondary">
+            Raiz conectada: <code>@(string.IsNullOrWhiteSpace(SmbConnectionService.LastStatus.RootPath) ? "Não configurada" : SmbConnectionService.LastStatus.RootPath)</code>
+        </MudText>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        @if (CanEdit)
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.DomainAdd"
+                       Disabled="@(!SmbConnectionService.LastStatus.IsConnected || _isLoadingTree)"
+                       OnClick="@(() => OpenCreateFolderDialogAsync(null))">
+                Nova Fábrica (Raiz)
+            </MudButton>
+        }
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   Disabled="@_isLoadingTree"
+                   OnClick="ReloadTreeAsync">
+            Atualizar
+        </MudButton>
+    </div>
+</div>
+
+<SnackbarNotification @bind-Message="_errorMessage" Severity="Severity.Error" />
+
+@if (!SmbConnectionService.LastStatus.IsConnected && !_isLoadingTree)
+{
+    <MudPaper Elevation="2" Class="pa-6 text-center">
+        <MudIcon Icon="@Icons.Material.Filled.CloudOff" Color="Color.Warning" Size="Size.Large" Class="mb-2" />
+        <MudText Typo="Typo.h6" Class="mb-2">Servidor SMB não conectado</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            @SmbConnectionService.LastStatus.Message
+        </MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="configuracao-smb" StartIcon="@Icons.Material.Filled.Settings">
+            Ir para Configuração SMB
+        </MudButton>
+    </MudPaper>
+}
+else
+{
+    <MudGrid Spacing="3">
+        <!-- PAINEL ESQUERDO: MUDTREEVIEW -->
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-3">
+                <div class="d-flex align-center justify-space-between mb-2">
+                    <MudText Typo="Typo.subtitle1"><b>Estrutura da Fábrica</b></MudText>
+                    <div>
+                        <MudTooltip Text="Expandir todas as pastas">
+                            <MudIconButton Icon="@Icons.Material.Filled.UnfoldMore" Size="Size.Small" OnClick="@(() => SetAllExpanded(true))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Recolher todas as pastas">
+                            <MudIconButton Icon="@Icons.Material.Filled.UnfoldLess" Size="Size.Small" OnClick="@(() => SetAllExpanded(false))" />
+                        </MudTooltip>
+                    </div>
+                </div>
+
+                <MudTextField @bind-Value="_treeSearch"
+                              @bind-Value:after="RebuildMudTreeItems"
+                              Placeholder="Filtrar fábrica, área, equipamento, tag..."
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Clearable="true"
+                              Immediate="true"
+                              Class="mb-2" />
+
+                @if (_isLoadingTree)
+                {
+                    <div class="d-flex justify-center pa-6">
+                        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                    </div>
+                }
+                else if (_treeItems.Count == 0)
+                {
+                    <div class="pa-4 text-center">
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                            Nenhuma fábrica encontrada neste diretório raiz.
+                        </MudText>
+                        @if (CanEdit && string.IsNullOrWhiteSpace(_treeSearch))
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Info"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                                       OnClick="SeedExampleStructureAsync">
+                                Criar Estrutura Exemplo
+                            </MudButton>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="tree-panel-scroll">
+                        <MudTreeView T="FolderTreeNode"
+                                     Items="@_treeItems"
+                                     SelectedValue="_selectedNode"
+                                     SelectedValueChanged="OnSelectedNodeChangedAsync"
+                                     SelectionMode="SelectionMode.SingleSelection"
+                                     Hover="true"
+                                     Dense="true">
+                            <ItemTemplate Context="item">
+                                <MudTreeViewItem T="FolderTreeNode"
+                                                 Value="@item.Value"
+                                                 Items="@item.Children"
+                                                 Text="@item.Text"
+                                                 Icon="@item.Icon"
+                                                 IconColor="@FolderIconCatalog.ResolveColor(item.Value?.Metadata.IconColor)"
+                                                 EndText="@GetEndBadgeText(item.Value)"
+                                                 EndTextTypo="Typo.caption"
+                                                 CanExpand="@item.Expandable"
+                                                 Expanded="@item.Expanded"
+                                                 ExpandedChanged="@((bool val) => item.Expanded = val)" />
+                            </ItemTemplate>
+                        </MudTreeView>
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <!-- PAINEL DIREITO: METADADOS JSON + ARQUIVOS -->
+        <MudItem xs="12" md="8">
+            @if (_selectedNode is null)
+            {
+                <MudPaper Elevation="2" Class="pa-8 text-center">
+                    <MudIcon Icon="@Icons.Material.Filled.TouchApp" Color="Color.Primary" Size="Size.Large" Class="mb-2" />
+                    <MudText Typo="Typo.h6" Class="mb-1">Selecione uma pasta na árvore</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Clique em uma Fábrica, Localização, Equipamento, Componente ou Documentação à esquerda para ver os metadados do <code>folder.meta.json</code> e os backups armazenados.
+                    </MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <!-- CARD DE METADADOS DA PASTA (folder.meta.json) -->
+                <MudPaper Elevation="2" Class="pa-4 mb-3">
+                    <div class="d-flex flex-wrap align-start justify-space-between gap-2 mb-2">
+                        <div class="d-flex align-center gap-2">
+                            <MudAvatar Color="@FolderIconCatalog.ResolveColor(_selectedNode.Metadata.IconColor)" Variant="Variant.Outlined">
+                                <MudIcon Icon="@FolderIconCatalog.ResolveIcon(_selectedNode.Metadata.IconKey)" />
+                            </MudAvatar>
+                            <div>
+                                <div class="d-flex flex-wrap align-center gap-2">
+                                    <MudText Typo="Typo.h6">@_selectedNode.Metadata.Name</MudText>
+                                    <MudChip T="string"
+                                             Size="Size.Small"
+                                             Color="@(_selectedNode.Metadata.AllowFileStorage ? Color.Success : Color.Primary)"
+                                             Variant="Variant.Filled">
+                                        @FolderIconCatalog.GetGroupLabel(_selectedNode.Metadata.Group)
+                                    </MudChip>
+                                    @{
+                                        var subCat = FolderIconCatalog.GetSubCategoryLabel(_selectedNode.Metadata);
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(subCat))
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                                            @subCat
+                                        </MudChip>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(_selectedNode.Metadata.ShortName))
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                            Sigla: @_selectedNode.Metadata.ShortName
+                                        </MudChip>
+                                    }
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    <code>@_selectedNode.RelativePath</code>
+                                </MudText>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-1">
+                            @if (CanEdit && _selectedNode.Metadata.Group is not (FolderGroupType.Projeto or FolderGroupType.Documentacao))
+                            {
+                                <MudTooltip Text="Criar subpasta dentro desta pasta">
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Primary"
+                                               Size="Size.Small"
+                                               StartIcon="@Icons.Material.Filled.CreateNewFolder"
+                                               OnClick="@(() => OpenCreateFolderDialogAsync(_selectedNode))">
+                                        Subpasta
+                                    </MudButton>
+                                </MudTooltip>
+                            }
+                            @if (CanEdit)
+                            {
+                                <MudTooltip Text="Editar propriedades e metadados (folder.meta.json)">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                   Color="Color.Primary"
+                                                   Size="Size.Small"
+                                                   OnClick="OpenEditFolderDialogAsync" />
+                                </MudTooltip>
+                                <MudTooltip Text="Excluir pasta">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error"
+                                                   Size="Size.Small"
+                                                   OnClick="DeleteSelectedFolderAsync" />
+                                </MudTooltip>
+                            }
+                            <MudTooltip Text="Ver conteúdo do folder.meta.json">
+                                <MudIconButton Icon="@Icons.Material.Filled.DataObject"
+                                               Color="@(_showRawJson ? Color.Info : Color.Default)"
+                                               Size="Size.Small"
+                                               OnClick="@(() => _showRawJson = !_showRawJson)" />
+                            </MudTooltip>
+                            <MudTooltip Text="Abrir pasta no Windows Explorer">
+                                <MudIconButton Icon="@Icons.Material.Filled.Launch"
+                                               Color="Color.Default"
+                                               Size="Size.Small"
+                                               OnClick="@(() => OpenInExplorer(_selectedNode.FullPath))" />
+                            </MudTooltip>
+                        </div>
+                    </div>
+
+                    <!-- DADOS ESPECÍFICOS POR TIPO DE PASTA -->
+                    @if (_selectedNode.Metadata.Group == FolderGroupType.Fabrica && _selectedNode.Metadata.FactoryInfo is not null)
+                    {
+                        var fInfo = _selectedNode.Metadata.FactoryInfo;
+                        <MudDivider Class="my-2" />
+                        <MudGrid Spacing="1">
+                            <MudItem xs="12" sm="6" md="4">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Razão Social</MudText>
+                                <MudText Typo="Typo.body2"><b>@DisplayOrDash(fInfo.RazaoSocial)</b></MudText>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">CNPJ</MudText>
+                                <MudText Typo="Typo.body2">@DisplayOrDash(fInfo.Cnpj)</MudText>
+                            </MudItem>
+                            <MudItem xs="12" md="5">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Endereço</MudText>
+                                <MudText Typo="Typo.body2">@DisplayOrDash(fInfo.Endereco)</MudText>
+                            </MudItem>
+                            @if (!string.IsNullOrWhiteSpace(fInfo.Informacoes))
+                            {
+                                <MudItem xs="12">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Informações sobre a Fábrica</MudText>
+                                    <MudText Typo="Typo.body2">@fInfo.Informacoes</MudText>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+                    else if (_selectedNode.Metadata.Group == FolderGroupType.Equipamento && _selectedNode.Metadata.EquipmentInfo is not null)
+                    {
+                        var eq = _selectedNode.Metadata.EquipmentInfo;
+                        <MudDivider Class="my-2" />
+                        <MudGrid Spacing="1">
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Fabricante</MudText>
+                                <MudText Typo="Typo.body2"><b>@DisplayOrDash(eq.Fabricante)</b></MudText>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Modelo</MudText>
+                                <MudText Typo="Typo.body2">@DisplayOrDash(eq.Modelo)</MudText>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Ano de Fabricação</MudText>
+                                <MudText Typo="Typo.body2">@DisplayOrDash(eq.AnoFabricacao)</MudText>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Número de Série</MudText>
+                                <MudText Typo="Typo.body2">@DisplayOrDash(eq.NumeroSerie)</MudText>
+                            </MudItem>
+                        </MudGrid>
+                    }
+                    else if (_selectedNode.Metadata.Group == FolderGroupType.Componente &&
+                             (!string.IsNullOrWhiteSpace(_selectedNode.Metadata.Description) ||
+                              !string.IsNullOrWhiteSpace(_selectedNode.Metadata.ComponentInfo?.Observations)))
+                    {
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Observações</MudText>
+                        <MudText Typo="Typo.body2">@(string.IsNullOrWhiteSpace(_selectedNode.Metadata.Description) ? _selectedNode.Metadata.ComponentInfo?.Observations : _selectedNode.Metadata.Description)</MudText>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_selectedNode.Metadata.Description))
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2">@_selectedNode.Metadata.Description</MudText>
+                    }
+
+                    @if (SelectedRepositoryTypes.Count > 0)
+                    {
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Tipo de Repositório</MudText>
+                        <MudGrid Spacing="1">
+                            @foreach (var repository in SelectedRepositoryTypes)
+                            {
+                                <MudItem xs="12">
+                                    <MudText Typo="Typo.body2"><b>@repository.Name</b></MudText>
+                                    @if (!string.IsNullOrWhiteSpace(repository.Description))
+                                    {
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">@repository.Description</MudText>
+                                    }
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+
+                    <MudDivider Class="my-2" />
+
+                    <!-- AUDITORIA -->
+                    <MudGrid Spacing="1">
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Criado por</MudText>
+                            <MudText Typo="Typo.body2"><b>@_selectedNode.Metadata.CreatedBy</b></MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Data de Criação</MudText>
+                            <MudText Typo="Typo.body2">@_selectedNode.Metadata.CreatedAt.ToString("dd/MM/yyyy HH:mm")</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Modificado por</MudText>
+                            <MudText Typo="Typo.body2">@_selectedNode.Metadata.ModifiedBy</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Última Modificação</MudText>
+                            <MudText Typo="Typo.body2">@_selectedNode.Metadata.ModifiedAt.ToString("dd/MM/yyyy HH:mm")</MudText>
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudDivider Class="my-2" />
+
+                    <div class="d-flex flex-wrap align-center justify-space-between gap-2">
+                        <div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                                Padrão de nome automático para arquivos nesta hierarquia:
+                            </MudText>
+                            <code>@GetPatternPreview(_selectedNode)</code>
+                        </div>
+
+                        @if (_selectedNode.Metadata.AllowFileStorage)
+                        {
+                            <div class="d-flex flex-wrap align-center gap-1">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mr-1">Extensões aceitas:</MudText>
+                                @foreach (var ext in _selectedNode.Metadata.AllowedExtensions)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">@ext</MudChip>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (_showRawJson)
+                    {
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.caption" Color="Color.Info" Class="d-block mb-1">
+                            Conteúdo de <code>@FolderMetadata.MetadataFileName</code>:
+                        </MudText>
+                        <pre style="max-height: 220px; overflow: auto; font-size: 0.78rem; padding: 10px; border-radius: 6px; background: rgba(0,0,0,0.18); margin: 0;">@SerializeMetadataPreview(_selectedNode.Metadata)</pre>
+                    }
+                </MudPaper>
+
+                <!-- CARD DE ARQUIVOS DE BACKUP -->
+                <MudPaper Elevation="2" Class="pa-4">
+                    <div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-3">
+                        <MudText Typo="Typo.h6">Arquivos Armazenados (@_files.Count)</MudText>
+                        <div class="d-flex flex-wrap align-center gap-2">
+                            <MudTextField @bind-Value="_fileSearch"
+                                          Placeholder="Buscar arquivo..."
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Filled.Search"
+                                          Immediate="true"
+                                          Style="min-width: 220px;" />
+
+                            @if (CanEdit && _selectedNode.Metadata.AllowFileStorage)
+                            {
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Success"
+                                           Size="Size.Small"
+                                           StartIcon="@Icons.Material.Filled.CloudUpload"
+                                           OnClick="OpenUploadDialogAsync">
+                                    Cadastrar / Enviar Backup
+                                </MudButton>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!_selectedNode.Metadata.AllowFileStorage)
+                    {
+                        <MudPaper Outlined="true" Class="pa-3 mb-3">
+                            <MudText Typo="Typo.body2">
+                                Pastas do tipo <b>@FolderIconCatalog.GetGroupLabel(_selectedNode.Metadata.Group)</b> são organizadoras da estrutura.
+                                Os arquivos só podem ser armazenados dentro de pastas da categoria <b>Componente</b> ou <b>Documentação</b>.
+                            </MudText>
+                        </MudPaper>
+                    }
+
+                    @if (_files.Count > 0 || _selectedNode.Metadata.AllowFileStorage)
+                    {
+                        <div class="crud-table-scroll">
+                            <MudTable Items="@FilteredFiles" Hover="true" Dense="true" Striped="true" Loading="_isLoadingFiles" Breakpoint="Breakpoint.Sm" RowClassFunc="GetBackupFileRowClass">
+                                <HeaderContent>
+                                    <MudTh>Arquivo</MudTh>
+                                    <MudTh>Descrição da alteração</MudTh>
+                                    <MudTh>Tipo</MudTh>
+                                    <MudTh>Extensão</MudTh>
+                                    <MudTh>Tamanho</MudTh>
+                                    <MudTh>Enviado em</MudTh>
+                                    <MudTh>Modificado em</MudTh>
+                                    <MudTh>Enviado por</MudTh>
+                                    <MudTh>Ações</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Arquivo" Class="backup-file-name-cell">
+                                        <div class="d-flex align-center gap-2">
+                                            <MudIcon Icon="@FolderIconCatalog.ResolveFileIcon(context.Extension)"
+                                                     Color="@(context.IsAllowedByFolderPolicy ? Color.Primary : Color.Warning)"
+                                                     Size="Size.Small" />
+                                            <div>
+                                                <MudText Typo="Typo.body2" Class="backup-file-name"><b>@context.FileName</b></MudText>
+                                                @if (!string.IsNullOrWhiteSpace(context.OriginalFileName) &&
+                                                     !string.Equals(context.OriginalFileName, context.FileName, StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block backup-file-name">
+                                                        Original: @context.OriginalFileName
+                                                    </MudText>
+                                                }
+                                                @if (context.IsRoutineBackup)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">Backup de Rotina</MudChip>
+                                                }
+                                            </div>
+                                        </div>
+                                    </MudTd>
+                                    <MudTd DataLabel="Descrição da alteração">@(string.IsNullOrWhiteSpace(context.Description) ? "-" : context.Description)</MudTd>
+                                    <MudTd DataLabel="Tipo">
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@context.FileTypeName</MudChip>
+                                    </MudTd>
+                                    <MudTd DataLabel="Extensão">@context.Extension</MudTd>
+                                    <MudTd DataLabel="Tamanho">@context.FormattedSize</MudTd>
+                                    <MudTd DataLabel="Enviado em">@context.CreatedAt.ToString("dd/MM/yyyy HH:mm")</MudTd>
+                                    <MudTd DataLabel="Modificado em">@context.ModifiedAt.ToString("dd/MM/yyyy HH:mm")</MudTd>
+                                    <MudTd DataLabel="Enviado por">@context.UploadedBy</MudTd>
+                                    <MudTd DataLabel="Ações" Style="white-space: nowrap;">
+                                        <MudTooltip Text="Baixar cópia local">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Download"
+                                                           Size="Size.Small"
+                                                           Color="Color.Info"
+                                                           OnClick="@(() => DownloadFileAsync(context))" />
+                                        </MudTooltip>
+                                        <MudTooltip Text="Abrir arquivo">
+                                            <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
+                                                           Size="Size.Small"
+                                                           Color="Color.Primary"
+                                                           OnClick="@(() => OpenInExplorer(context.FullPath))" />
+                                        </MudTooltip>
+                                        @if (CanEdit)
+                                        {
+                                            <MudTooltip Text="Excluir arquivo">
+                                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                               Size="Size.Small"
+                                                               Color="Color.Error"
+                                                               OnClick="@(() => DeleteFileAsync(context))" />
+                                            </MudTooltip>
+                                        }
+                                    </MudTd>
+                                </RowTemplate>
+                                <NoRecordsContent>
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
+                                        Nenhum arquivo armazenado nesta pasta ainda.
+                                    </MudText>
+                                </NoRecordsContent>
+                            </MudTable>
+                        </div>
+                    }
+                </MudPaper>
+            }
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private static readonly JsonSerializerOptions PreviewJsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    private List<FolderTreeNode> _rawNodes = [];
+    private List<ITreeItemData<FolderTreeNode>> _treeItems = [];
+    private FolderTreeNode? _selectedNode;
+    private List<BackupFileItem> _files = [];
+    private List<FileTypeDefinition> _repositoryTypes = [];
+
+    private string _treeSearch = string.Empty;
+    private string _fileSearch = string.Empty;
+    private string? _errorMessage;
+    private bool _isLoadingTree;
+    private bool _isLoadingFiles;
+    private bool _showRawJson;
+
+    private bool CanEdit => AuthService.HasRole(UserRole.Operacao, UserRole.Admin);
+
+    private IEnumerable<BackupFileItem> FilteredFiles =>
+        (string.IsNullOrWhiteSpace(_fileSearch)
+            ? _files
+            : _files.Where(file =>
+                file.FileName.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase) ||
+                file.OriginalFileName.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase) ||
+                file.Description.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase) ||
+                file.FileTypeName.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase) ||
+                file.Extension.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase) ||
+                file.UploadedBy.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(file => file.CreatedAt)
+            .ThenBy(file => file.FileName, StringComparer.OrdinalIgnoreCase);
+
+    private string GetBackupFileRowClass(BackupFileItem file, int rowIndex)
+    {
+        var latestFile = _files
+            .OrderByDescending(item => item.CreatedAt)
+            .ThenBy(item => item.FileName, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+
+        return ReferenceEquals(file, latestFile) ? "latest-backup-file" : string.Empty;
+    }
+
+    private List<FileTypeDefinition> SelectedRepositoryTypes
+    {
+        get
+        {
+            if (_selectedNode is null)
+                return [];
+
+            var selectedIds = _selectedNode.Metadata.AllowedFileTypeIds.ToHashSet();
+            if (_selectedNode.Metadata.ProjectInfo?.FileTypeId is int projectFileTypeId)
+                selectedIds.Add(projectFileTypeId);
+
+            return _repositoryTypes.Where(type => selectedIds.Contains(type.Id)).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _repositoryTypes = await FileTypeService.GetAllAsync(onlyActive: false);
+        await ReloadTreeAsync();
+    }
+
+    private async Task ReloadTreeAsync()
+    {
+        _errorMessage = null;
+        _isLoadingTree = true;
+        var previousSelectedPath = _selectedNode?.FullPath;
+
+        try
+        {
+            var result = await BackupService.GetFolderTreeAsync();
+            if (!result.Success)
+            {
+                _errorMessage = result.Message;
+                _rawNodes = [];
+                _treeItems = [];
+                _selectedNode = null;
+                _files = [];
+                return;
+            }
+
+            _rawNodes = result.Data ?? [];
+            RebuildMudTreeItems();
+
+            if (!string.IsNullOrWhiteSpace(previousSelectedPath))
+            {
+                var found = FindNodeByPath(_rawNodes, previousSelectedPath);
+                if (found is not null)
+                {
+                    _selectedNode = found;
+                    await LoadFilesForSelectedNodeAsync();
+                }
+                else
+                {
+                    _selectedNode = null;
+                    _files = [];
+                }
+            }
+        }
+        finally
+        {
+            _isLoadingTree = false;
+        }
+    }
+
+    private void RebuildMudTreeItems()
+    {
+        var filter = _treeSearch?.Trim();
+        _treeItems = [];
+
+        foreach (var node in _rawNodes)
+        {
+            var item = ConvertToTreeItem(node, filter);
+            if (item is not null)
+                _treeItems.Add(item);
+        }
+    }
+
+    private ITreeItemData<FolderTreeNode>? ConvertToTreeItem(FolderTreeNode node, string? filter)
+    {
+        var childItems = new List<ITreeItemData<FolderTreeNode>>();
+        foreach (var child in node.Children)
+        {
+            var converted = ConvertToTreeItem(child, filter);
+            if (converted is not null)
+                childItems.Add(converted);
+        }
+
+        var selfMatches = string.IsNullOrWhiteSpace(filter) ||
+                          node.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                          node.Metadata.ShortName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                          node.Metadata.Description.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                          (node.Metadata.ComponentInfo?.Observations.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
+
+        if (!selfMatches && childItems.Count == 0)
+            return null;
+
+        return new TreeItemData<FolderTreeNode>
+        {
+            Value = node,
+            Text = node.Name,
+            Icon = FolderIconCatalog.ResolveIcon(node.Metadata.IconKey),
+            Expanded = !string.IsNullOrWhiteSpace(filter) || childItems.Count > 0,
+            Expandable = childItems.Count > 0,
+            Children = childItems
+        };
+    }
+
+    private void SetAllExpanded(bool expanded)
+    {
+        void Walk(IEnumerable<ITreeItemData<FolderTreeNode>>? items)
+        {
+            if (items is null) return;
+            foreach (var item in items)
+            {
+                item.Expanded = expanded;
+                Walk(item.Children);
+            }
+        }
+
+        Walk(_treeItems);
+    }
+
+    private async Task OnSelectedNodeChangedAsync(FolderTreeNode? node)
+    {
+        _selectedNode = node;
+        await LoadFilesForSelectedNodeAsync();
+    }
+
+    private async Task LoadFilesForSelectedNodeAsync()
+    {
+        if (_selectedNode is null)
+        {
+            _files = [];
+            return;
+        }
+
+        _isLoadingFiles = true;
+        try
+        {
+            var result = await BackupService.GetFilesInFolderAsync(_selectedNode.FullPath);
+            if (!result.Success)
+            {
+                _errorMessage = result.Message;
+                _files = [];
+                return;
+            }
+
+            _files = result.Data ?? [];
+            _selectedNode.FileCount = _files.Count;
+        }
+        finally
+        {
+            _isLoadingFiles = false;
+        }
+    }
+
+    private async Task OpenCreateFolderDialogAsync(FolderTreeNode? parentNode)
+    {
+        var isRootLevel = parentNode is null;
+        var parameters = new DialogParameters
+        {
+            ["IsEditMode"] = false,
+            ["IsRootLevel"] = isRootLevel,
+            ["ParentDisplayPath"] = isRootLevel ? "Raiz do Servidor SMB" : parentNode!.RelativePath,
+            ["ParentNamingPrefix"] = parentNode?.NamingPrefix ?? string.Empty
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FolderEditorDialog>(
+            isRootLevel ? "Nova Fábrica (Raiz)" : $"Nova Subpasta em '{parentNode!.Name}'",
+            parameters,
+            options);
+
+        var dialogResult = await dialog.Result;
+        if (dialogResult is null || dialogResult.Canceled || dialogResult.Data is not FolderEditRequest request)
+            return;
+
+        var createResult = await BackupService.CreateFolderAsync(parentNode?.FullPath, request);
+        if (!createResult.Success)
+        {
+            _errorMessage = createResult.Message;
+            return;
+        }
+
+        Snackbar.Add(createResult.Message, Severity.Success);
+        _selectedNode = createResult.Data;
+        await ReloadTreeAsync();
+    }
+
+    private async Task OpenEditFolderDialogAsync()
+    {
+        if (_selectedNode is null) return;
+
+        var isRootLevel = _rawNodes.Any(r => string.Equals(r.FullPath, _selectedNode.FullPath, StringComparison.OrdinalIgnoreCase));
+        var parentPrefix = isRootLevel ? string.Empty : FindParentPrefix(_rawNodes, _selectedNode.FullPath, string.Empty);
+
+        var parameters = new DialogParameters
+        {
+            ["IsEditMode"] = true,
+            ["IsRootLevel"] = isRootLevel,
+            ["InitialMetadata"] = _selectedNode.Metadata,
+            ["ParentDisplayPath"] = _selectedNode.RelativePath,
+            ["ParentNamingPrefix"] = parentPrefix
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FolderEditorDialog>(
+            $"Propriedades de '{_selectedNode.Name}'",
+            parameters,
+            options);
+
+        var dialogResult = await dialog.Result;
+        if (dialogResult is null || dialogResult.Canceled || dialogResult.Data is not FolderEditRequest request)
+            return;
+
+        var parentDir = Path.GetDirectoryName(_selectedNode.FullPath);
+        var updateResult = await BackupService.UpdateFolderAsync(_selectedNode.FullPath, request);
+        if (!updateResult.Success)
+        {
+            _errorMessage = updateResult.Message;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(parentDir))
+        {
+            _selectedNode.FullPath = Path.Combine(parentDir, request.Name.Trim());
+        }
+
+        Snackbar.Add(updateResult.Message, Severity.Success);
+        await ReloadTreeAsync();
+    }
+
+    private async Task DeleteSelectedFolderAsync()
+    {
+        if (_selectedNode is null) return;
+
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"Deseja realmente excluir a pasta '{_selectedNode.Name}' e TODO o seu conteúdo (subpastas e backups) do servidor SMB?"
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar exclusão de pasta", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        var deleteResult = await BackupService.DeleteFolderAsync(_selectedNode.FullPath);
+        if (!deleteResult.Success)
+        {
+            _errorMessage = deleteResult.Message;
+            return;
+        }
+
+        Snackbar.Add(deleteResult.Message, Severity.Success);
+        _selectedNode = null;
+        _files = [];
+        await ReloadTreeAsync();
+    }
+
+    private async Task OpenUploadDialogAsync()
+    {
+        if (_selectedNode is null) return;
+
+        var parameters = new DialogParameters
+        {
+            ["TargetFolderPath"] = _selectedNode.FullPath,
+            ["TargetFolderName"] = _selectedNode.Name,
+            ["FolderNamingPrefix"] = _selectedNode.NamingPrefix,
+            ["AllowedExtensions"] = _selectedNode.Metadata.AllowedExtensions
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<BackupUploadDialog>("Cadastrar / Enviar Arquivo de Backup", parameters, options);
+        var dialogResult = await dialog.Result;
+
+        if (dialogResult is null || dialogResult.Canceled || dialogResult.Data is not BackupUploadRequest request)
+            return;
+
+        var uploadResult = await BackupService.UploadBackupFileAsync(request);
+        if (!uploadResult.Success)
+        {
+            _errorMessage = uploadResult.Message;
+            return;
+        }
+
+        Snackbar.Add(uploadResult.Message, Severity.Success);
+        await ReloadTreeAsync();
+    }
+
+    private async Task DownloadFileAsync(BackupFileItem file)
+    {
+        var destination = await FileDialogService.PickSaveLocationAsync(
+            $"Salvar cópia de '{file.FileName}'",
+            file.FileName,
+            file.Extension);
+
+        if (string.IsNullOrWhiteSpace(destination)) return;
+
+        var res = await BackupService.DownloadBackupFileAsync(file.FullPath, destination);
+        if (!res.Success)
+        {
+            _errorMessage = res.Message;
+            return;
+        }
+
+        Snackbar.Add(res.Message, Severity.Success);
+    }
+
+    private async Task DeleteFileAsync(BackupFileItem file)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"Deseja realmente excluir o backup '{file.FileName}' do servidor SMB?"
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirmar exclusão de arquivo", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        var deleteResult = await BackupService.DeleteBackupFileAsync(file.FullPath);
+        if (!deleteResult.Success)
+        {
+            _errorMessage = deleteResult.Message;
+            return;
+        }
+
+        Snackbar.Add(deleteResult.Message, Severity.Success);
+        await ReloadTreeAsync();
+    }
+
+    private async Task SeedExampleStructureAsync()
+    {
+        var res = await BackupService.SeedExamplePlantStructureAsync();
+        if (!res.Success)
+        {
+            _errorMessage = res.Message;
+            return;
+        }
+
+        Snackbar.Add(res.Message, Severity.Success);
+        await ReloadTreeAsync();
+    }
+
+    private void OpenInExplorer(string path)
+    {
+        var res = FileDialogService.OpenPathInShell(path);
+        if (!res.Success)
+            Snackbar.Add(res.Message, Severity.Error);
+    }
+
+    private static string DisplayOrDash(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string GetPatternPreview(FolderTreeNode node)
+    {
+        var ext = node.Metadata.AllowedExtensions.FirstOrDefault() ?? ".ext";
+        return string.IsNullOrWhiteSpace(node.NamingPrefix)
+            ? $"yyyyMMdd_HHmmss{ext}"
+            : $"{node.NamingPrefix}_yyyyMMdd_HHmmss{ext}";
+    }
+
+    private static string SerializeMetadataPreview(FolderMetadata metadata) =>
+        JsonSerializer.Serialize(metadata, PreviewJsonOptions);
+
+    private static string? GetEndBadgeText(FolderTreeNode? node)
+    {
+        if (node is null) return null;
+        if (node.FileCount > 0) return $"{node.FileCount}";
+        return node.Metadata.AllowFileStorage ? "0" : null;
+    }
+
+    private static FolderTreeNode? FindNodeByPath(IEnumerable<FolderTreeNode> nodes, string fullPath)
+    {
+        foreach (var node in nodes)
+        {
+            if (string.Equals(node.FullPath, fullPath, StringComparison.OrdinalIgnoreCase))
+                return node;
+
+            var child = FindNodeByPath(node.Children, fullPath);
+            if (child is not null)
+                return child;
+        }
+        return null;
+    }
+
+    private static string FindParentPrefix(IEnumerable<FolderTreeNode> nodes, string targetFullPath, string currentParentPrefix)
+    {
+        foreach (var node in nodes)
+        {
+            if (string.Equals(node.FullPath, targetFullPath, StringComparison.OrdinalIgnoreCase))
+                return currentParentPrefix;
+
+            var nested = FindParentPrefix(node.Children, targetFullPath, node.NamingPrefix);
+            if (!string.IsNullOrEmpty(nested) || ContainsNode(node.Children, targetFullPath))
+                return nested;
+        }
+        return string.Empty;
+    }
+
+    private static bool ContainsNode(IEnumerable<FolderTreeNode> nodes, string targetFullPath)
+    {
+        foreach (var node in nodes)
+        {
+            if (string.Equals(node.FullPath, targetFullPath, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (ContainsNode(node.Children, targetFullPath))
+                return true;
+        }
+        return false;
+    }
+}

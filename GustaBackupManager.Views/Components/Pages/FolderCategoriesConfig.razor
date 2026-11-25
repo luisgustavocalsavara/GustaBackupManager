@@ -1,0 +1,471 @@
+@page "/categorias-pastas"
+@inject IFolderCategoryConfigService CategoryConfigService
+@inject ICustomIconService CustomIconService
+@inject IBackupRepositoryService BackupRepositoryService
+@inject ISmbConnectionService SmbConnectionService
+@inject IAuthService AuthService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Ícones e Cores por Categoria</PageTitle>
+
+<div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-4">
+    <div>
+        <MudText Typo="Typo.h5">Cadastro de Ícone e Cor por Categoria de Pasta</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Configure o ícone e a cor padrão para cada tipo e subcategoria de pasta, ou insira novos ícones personalizados.
+        </MudText>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        @if (CanEdit)
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Secondary"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.AddPhotoAlternate"
+                       OnClick="OpenAddCustomIconDialogAsync">
+                Novo Ícone
+            </MudButton>
+        }
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Primary"
+                   Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.AccountTree"
+                   Href="backups">
+            Ir para Árvore de Pastas
+        </MudButton>
+    </div>
+</div>
+
+<MudGrid Spacing="3">
+    @if (CanEdit)
+    {
+        <MudItem xs="12" lg="5">
+            <MudPaper Elevation="2" Class="pa-4">
+                @if (_selected is null)
+                {
+                    <div class="pa-6 text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Palette" Color="Color.Primary" Size="Size.Large" Class="mb-2" />
+                        <MudText Typo="Typo.h6" Class="mb-1">Selecione uma categoria na tabela</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Clique em uma categoria ao lado para escolher o ícone e a cor exibidos na árvore de pastas.
+                        </MudText>
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex align-center justify-space-between gap-2 mb-3">
+                        <div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @FolderIconCatalog.GetGroupLabel(_selected.Group)
+                            </MudText>
+                            <MudText Typo="Typo.h6">@_selected.DisplayName</MudText>
+                        </div>
+                        <MudTooltip Text="Restaurar sugestão padrão desta categoria">
+                            <MudIconButton Icon="@Icons.Material.Filled.RestartAlt"
+                                           Color="Color.Warning"
+                                           Disabled="@_isBusy"
+                                           OnClick="ResetSelectedToDefaultAsync" />
+                        </MudTooltip>
+                    </div>
+
+                    <!-- PRÉVIA VISUAL COMO APARECERÁ NA ÁRVORE -->
+                    <MudPaper Outlined="true" Class="pa-3 mb-3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-1">
+                            Prévia na Árvore de Pastas (MudTreeView):
+                        </MudText>
+                        <div class="d-flex align-center gap-2">
+                            <MudIcon Icon="@FolderIconCatalog.ResolveIcon(_editIconKey)"
+                                     Color="@FolderIconCatalog.ResolveColor(_editIconColor)"
+                                     Size="Size.Medium" />
+                            <MudText Typo="Typo.body1">
+                                <b>@(string.IsNullOrWhiteSpace(_selected.SubCategoryName) ? FolderIconCatalog.GetGroupLabel(_selected.Group) : _selected.SubCategoryName)</b>
+                            </MudText>
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="@FolderIconCatalog.ResolveColor(_editIconColor)"
+                                     Variant="Variant.Outlined">
+                                @GetColorLabel(_editIconColor)
+                            </MudChip>
+                        </div>
+                    </MudPaper>
+
+                    <!-- SELETOR UNIFICADO DE ÍCONE (SEM CATEGORIAS DE ÍCONES) -->
+                    <MudPaper Outlined="true" Class="pa-3 mb-3">
+                        <div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-2">
+                            <MudText Typo="Typo.subtitle2">Ícone (@FilteredIcons.Count())</MudText>
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.AddCircleOutline"
+                                       OnClick="OpenAddCustomIconDialogAsync">
+                                Inserir Novo Ícone
+                            </MudButton>
+                        </div>
+
+                        <MudTextField @bind-Value="_iconSearch"
+                                      Placeholder="Buscar ícone pelo nome..."
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Adornment="Adornment.Start"
+                                      AdornmentIcon="@Icons.Material.Filled.Search"
+                                      Clearable="true"
+                                      Immediate="true"
+                                      Class="mb-2" />
+
+                        <div class="icon-picker-grid mb-3">
+                            @foreach (var iconOpt in FilteredIcons)
+                            {
+                                var currentOpt = iconOpt;
+                                var isSelected = string.Equals(_editIconKey, currentOpt.Key, StringComparison.OrdinalIgnoreCase);
+                                <MudTooltip Text="@currentOpt.Label">
+                                    <div class="icon-picker-card @(isSelected ? "selected" : string.Empty)"
+                                         @onclick="@(() => _editIconKey = currentOpt.Key)">
+                                        @if (currentOpt.IsCustom && currentOpt.CustomId.HasValue)
+                                        {
+                                            <button type="button"
+                                                    class="icon-delete-badge"
+                                                    title="Remover ícone personalizado"
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="@(() => DeleteCustomIconAsync(currentOpt))">
+                                                ×
+                                            </button>
+                                        }
+                                        <MudIcon Icon="@currentOpt.Svg"
+                                                 Color="@(isSelected ? FolderIconCatalog.ResolveColor(_editIconColor) : Color.Default)"
+                                                 Size="Size.Medium" />
+                                        <div class="icon-picker-label">@currentOpt.Label</div>
+                                    </div>
+                                </MudTooltip>
+                            }
+                        </div>
+
+                        <MudText Typo="Typo.subtitle2" Class="mb-1">Cor do Ícone</MudText>
+                        <div class="d-flex flex-wrap gap-1">
+                            @foreach (var colorOpt in FolderIconCatalog.ColorsList)
+                            {
+                                var selected = string.Equals(_editIconColor, colorOpt.Key, StringComparison.OrdinalIgnoreCase);
+                                <MudChip T="string"
+                                         Color="@colorOpt.MudColor"
+                                         Variant="@(selected ? Variant.Filled : Variant.Outlined)"
+                                         Size="Size.Small"
+                                         OnClick="@(() => _editIconColor = colorOpt.Key)">
+                                    @colorOpt.Label
+                                </MudChip>
+                            }
+                        </div>
+                    </MudPaper>
+
+                    @if (SmbConnectionService.LastStatus.IsConnected)
+                    {
+                        <MudCheckBox T="bool"
+                                     @bind-Value="_syncExistingFolders"
+                                     Color="Color.Info"
+                                     Dense="true"
+                                     Class="mb-3"
+                                     Label="Aplicar também às pastas já existentes desta categoria no servidor SMB" />
+                    }
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               FullWidth="true"
+                               Disabled="@_isBusy"
+                               OnClick="SaveSelectedAsync">
+                        Salvar Ícone e Cor
+                    </MudButton>
+                }
+            </MudPaper>
+        </MudItem>
+    }
+
+    <MudItem xs="12" lg="@(CanEdit ? 7 : 12)">
+        <MudPaper Elevation="2" Class="pa-4">
+            <div class="d-flex flex-wrap align-center justify-space-between gap-2 mb-3">
+                <MudText Typo="Typo.h6">Categorias Cadastradas (@FilteredCategories.Count() de @_categories.Count)</MudText>
+            </div>
+
+            <MudGrid Spacing="2" Class="mb-3">
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_searchText"
+                                  Placeholder="Buscar categoria (ex.: CLP, IHM, Manufatura...)"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Clearable="true"
+                                  Immediate="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="FolderGroupType?"
+                               @bind-Value="_groupFilter"
+                               Label="Filtrar por Tipo de Pasta"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Clearable="true">
+                        <MudSelectItem T="FolderGroupType?" Value="@((FolderGroupType?)null)">Todos os tipos</MudSelectItem>
+                        @foreach (FolderGroupType grp in Enum.GetValues<FolderGroupType>())
+                        {
+                            <MudSelectItem T="FolderGroupType?" Value="@((FolderGroupType?)grp)">
+                                @FolderIconCatalog.GetGroupLabel(grp)
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <div class="crud-table-scroll">
+                <MudTable Items="FilteredCategories"
+                          Hover="true"
+                          Dense="true"
+                          Striped="true"
+                          Loading="_isBusy"
+                          Breakpoint="Breakpoint.Sm"
+                          RowClassFunc="GetRowClass"
+                          T="FolderCategoryAppearance">
+                    <HeaderContent>
+                        <MudTh>Ícone</MudTh>
+                        <MudTh>Tipo de Pasta</MudTh>
+                        <MudTh>Categoria</MudTh>
+                        <MudTh>Cor Configurada</MudTh>
+                        @if (CanEdit)
+                        {
+                            <MudTh>Ações</MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Ícone">
+                            <MudIcon Icon="@FolderIconCatalog.ResolveIcon(context.IconKey)"
+                                     Color="@FolderIconCatalog.ResolveColor(context.IconColor)"
+                                     Size="Size.Medium" />
+                        </MudTd>
+                        <MudTd DataLabel="Tipo de Pasta">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                @FolderIconCatalog.GetGroupLabel(context.Group)
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Categoria">
+                            <b>@(string.IsNullOrWhiteSpace(context.SubCategoryName) ? FolderIconCatalog.GetGroupLabel(context.Group) : context.SubCategoryName)</b>
+                        </MudTd>
+                        <MudTd DataLabel="Cor Configurada">
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="@FolderIconCatalog.ResolveColor(context.IconColor)"
+                                     Variant="Variant.Filled">
+                                @GetColorLabel(context.IconColor)
+                            </MudChip>
+                        </MudTd>
+                        @if (CanEdit)
+                        {
+                            <MudTd DataLabel="Ações" Style="white-space: nowrap;">
+                                <MudTooltip Text="Editar ícone e cor">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                   Size="Size.Small"
+                                                   Color="Color.Primary"
+                                                   OnClick="@(() => SelectCategory(context))" />
+                                </MudTooltip>
+                                <MudTooltip Text="Restaurar sugestão padrão">
+                                    <MudIconButton Icon="@Icons.Material.Filled.RestartAlt"
+                                                   Size="Size.Small"
+                                                   Color="Color.Warning"
+                                                   OnClick="@(() => ResetRowToDefaultAsync(context))" />
+                                </MudTooltip>
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<FolderCategoryAppearance> _categories = [];
+    private FolderCategoryAppearance? _selected;
+    private string _editIconKey = "Folder";
+    private string _editIconColor = "Primary";
+    private string _iconSearch = string.Empty;
+    private bool _syncExistingFolders = true;
+
+    private string _searchText = string.Empty;
+    private FolderGroupType? _groupFilter;
+    private bool _isBusy;
+
+    private bool CanEdit => AuthService.HasRole(UserRole.Operacao, UserRole.Admin);
+
+    private IEnumerable<IconOption> FilteredIcons =>
+        string.IsNullOrWhiteSpace(_iconSearch)
+            ? FolderIconCatalog.AllIcons
+            : FolderIconCatalog.AllIcons.Where(i =>
+                i.Label.Contains(_iconSearch, StringComparison.OrdinalIgnoreCase) ||
+                i.Key.Contains(_iconSearch, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<FolderCategoryAppearance> FilteredCategories =>
+        _categories.Where(c =>
+            (!_groupFilter.HasValue || c.Group == _groupFilter.Value) &&
+            (string.IsNullOrWhiteSpace(_searchText) ||
+             c.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+             c.SubCategoryName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var customIcons = await CustomIconService.GetAllAsync();
+        FolderIconCatalog.SetCustomIcons(customIcons);
+
+        await LoadAsync();
+        if (_categories.Count > 0)
+        {
+            SelectCategory(_categories[0]);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            var previousId = _selected?.Id;
+            _categories = await CategoryConfigService.GetAllAsync();
+            if (previousId.HasValue)
+            {
+                var found = _categories.FirstOrDefault(c => c.Id == previousId.Value);
+                if (found is not null)
+                    SelectCategory(found);
+            }
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void SelectCategory(FolderCategoryAppearance item)
+    {
+        _selected = item;
+        _editIconKey = item.IconKey;
+        _editIconColor = item.IconColor;
+    }
+
+    private string GetRowClass(FolderCategoryAppearance item, int _) =>
+        _selected?.Id == item.Id ? "mud-selected-item" : string.Empty;
+
+    private async Task OpenAddCustomIconDialogAsync()
+    {
+        var parameters = new DialogParameters
+        {
+            ["PreviewColor"] = FolderIconCatalog.ResolveColor(_editIconColor)
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<AddCustomIconDialog>("Inserir Novo Ícone", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is CustomIconDefinition created)
+        {
+            _editIconKey = created.Key;
+            _iconSearch = string.Empty;
+            Snackbar.Add($"Ícone '{created.Label}' adicionado e selecionado!", Severity.Success);
+        }
+    }
+
+    private async Task DeleteCustomIconAsync(IconOption icon)
+    {
+        if (!icon.CustomId.HasValue) return;
+
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"Deseja remover o ícone personalizado '{icon.Label}'?"
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Remover ícone", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        var (success, message) = await CustomIconService.DeleteAsync(icon.CustomId.Value);
+        if (!success)
+        {
+            Snackbar.Add(message, Severity.Error);
+            return;
+        }
+
+        var all = await CustomIconService.GetAllAsync();
+        FolderIconCatalog.SetCustomIcons(all);
+
+        if (string.Equals(_editIconKey, icon.Key, StringComparison.OrdinalIgnoreCase))
+        {
+            _editIconKey = "Folder";
+        }
+
+        Snackbar.Add(message, Severity.Info);
+    }
+
+    private async Task SaveSelectedAsync()
+    {
+        if (_selected is null) return;
+
+        _isBusy = true;
+        try
+        {
+            var (success, message) = await CategoryConfigService.SaveAsync(_selected.Id, _editIconKey, _editIconColor);
+            if (!success)
+            {
+                Snackbar.Add(message, Severity.Error);
+                return;
+            }
+
+            Snackbar.Add(message, Severity.Success);
+
+            if (_syncExistingFolders && SmbConnectionService.LastStatus.IsConnected)
+            {
+                var (loc, comp, doc) = ParseSubCategories(_selected);
+                var syncRes = await BackupRepositoryService.SyncCategoryAppearanceAcrossFoldersAsync(
+                    _selected.Group, loc, comp, doc, _editIconKey, _editIconColor);
+                Snackbar.Add(syncRes.Message, syncRes.Success ? Severity.Info : Severity.Warning);
+            }
+
+            await LoadAsync();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ResetSelectedToDefaultAsync()
+    {
+        if (_selected is null) return;
+        await ResetRowToDefaultAsync(_selected);
+    }
+
+    private async Task ResetRowToDefaultAsync(FolderCategoryAppearance item)
+    {
+        _isBusy = true;
+        try
+        {
+            var (success, message) = await CategoryConfigService.ResetToDefaultAsync(item.Id);
+            Snackbar.Add(message, success ? Severity.Info : Severity.Error);
+            await LoadAsync();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static string GetColorLabel(string key) =>
+        FolderIconCatalog.ColorsList.FirstOrDefault(c =>
+            string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase))?.Label ?? key;
+
+    private static (LocationSubCategory? Loc, ComponentSubCategory? Comp, DocumentationSubCategory? Doc) ParseSubCategories(FolderCategoryAppearance item)
+    {
+        var parts = item.CategoryKey.Split(':');
+        if (parts.Length < 2)
+            return (null, null, null);
+
+        return item.Group switch
+        {
+            FolderGroupType.Localizacao when Enum.TryParse<LocationSubCategory>(parts[1], out var loc) => (loc, null, null),
+            FolderGroupType.Componente when Enum.TryParse<ComponentSubCategory>(parts[1], out var comp) => (null, comp, null),
+            FolderGroupType.Documentacao when Enum.TryParse<DocumentationSubCategory>(parts[1], out var doc) => (null, null, doc),
+            _ => (null, null, null)
+        };
+    }
+}
