@@ -115,7 +115,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         db.Database.EnsureCreated();
 
-        if (!db.Users.Any())
+        var isFirstInitialization = !db.Users.Any();
+        if (isFirstInitialization)
         {
             db.Users.AddRange(
                 new User
@@ -145,28 +146,38 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             db.SaveChanges();
         }
 
-        if (!db.FileTypes.Any())
+        var defaultFileTypes = new List<FileTypeDefinition>
         {
-            db.FileTypes.AddRange(
-                new FileTypeDefinition { Name = "Studio 5000", Extensions = ".acd;.l5x;.l5k", Description = "Rockwell Automation Studio 5000 Logix Designer", IconKey = "Memory" },
-                new FileTypeDefinition { Name = "RSLogix 500", Extensions = ".rss;.ss5", Description = "Rockwell MicroLogix RSLogix 500", IconKey = "Memory" },
-                new FileTypeDefinition { Name = "TIA Portal", Extensions = ".apxx;.zapxx;.s7p", Description = "Siemens TIA Portal", IconKey = "DeveloperBoard" },
-                new FileTypeDefinition { Name = "CODESYS", Extensions = ".project;.projectarchive", Description = "CODESYS e projetos compatíveis", IconKey = "DeveloperBoard" },
-                new FileTypeDefinition { Name = "FactoryTalk View", Extensions = ".apa;.mer", Description = "Rockwell FactoryTalk View", IconKey = "DesktopWindows" },
-                new FileTypeDefinition { Name = "TIA WinCC", Extensions = ".apxx;.zapxx", Description = "WinCC no TIA Portal", IconKey = "TouchApp" },
-                new FileTypeDefinition { Name = "RSNetwork", Extensions = ".rsn;.rsl", Description = "Rockwell RSNetwork", IconKey = "Hub" },
-                new FileTypeDefinition { Name = "Inversores de Frequência", Extensions = ".ccwsln;.pf5;.dno;.par;.wps;.ssp;.xml;.csv", Description = "Parâmetros PowerFlex, SINAMICS, WEG CFW e Danfoss.", IconKey = "Speed" },
-                new FileTypeDefinition { Name = "Robôs Industriais", Extensions = ".mod;.sys;.pgf;.cfg", Description = "Backups de robôs industriais.", IconKey = "PrecisionManufacturing" },
-                new FileTypeDefinition { Name = "Documentos Diversos", Extensions = ".pdf;.docx;.xlsx;.txt", Description = "Documentação técnica diversa.", IconKey = "Description" },
-                new FileTypeDefinition { Name = "Diagramas Elétricos", Extensions = ".pdf;.dwg;.zw1", Description = "Diagramas elétricos e arquivos EPLAN/CAD.", IconKey = "Architecture" },
-                new FileTypeDefinition { Name = "Diagramas Pneumáticos", Extensions = ".pdf;.dwg", Description = "Diagramas pneumáticos.", IconKey = "Architecture" },
-                new FileTypeDefinition { Name = "Manuais de Operação", Extensions = ".pdf;.docx", Description = "Manuais de operação.", IconKey = "MenuBook" },
-                new FileTypeDefinition { Name = "Manuais Técnicos", Extensions = ".pdf;.docx", Description = "Manuais técnicos de equipamentos.", IconKey = "MenuBook" },
-                new FileTypeDefinition { Name = "Folhetins e Informações", Extensions = ".pdf;.docx;.xlsx", Description = "Folhetins e informações técnicas.", IconKey = "Description" },
-                new FileTypeDefinition { Name = "Lista de Spare Parts", Extensions = ".pdf;.xlsx;.csv", Description = "Listas de peças sobressalentes.", IconKey = "Inventory" },
-                new FileTypeDefinition { Name = "Mídias", Extensions = ".jpg;.jpeg;.png;.mp4", Description = "Imagens e vídeos de referência.", IconKey = "PermMedia" });
+            new() { Name = "RSLogix 5", Extensions = ".rsp", Description = "Projetos de controladores Rockwell PLC-5.", IconKey = "Memory" },
+            new() { Name = "RSLogix 500", Extensions = ".rss;.ach", Description = "Projetos de controladores Rockwell MicroLogix.", IconKey = "Memory" },
+            new() { Name = "RSLogix/Studio5000", Extensions = ".acd;.l5k;.l5x", Description = "Projetos e arquivos de troca Logix Designer.", IconKey = "Memory" },
+            new() { Name = "RSNetworx DeviceNET", Extensions = ".dnt;.dnb", Description = "Projetos de configuração de redes DeviceNet.", IconKey = "Hub" },
+            new() { Name = "FactoryTalk Studio", Extensions = ".apa;.med;.mer", Description = "Aplicações, arquivos e runtimes FactoryTalk View.", IconKey = "DesktopWindows" },
+            new() { Name = "Connected Components Workbench (CCW)", Extensions = ".ccwsln;.ccwproj;.ccwarchive", Description = "Soluções e projetos Connected Components Workbench.", IconKey = "DeveloperBoard" },
+            new() { Name = "PanelBuilder32", Extensions = ".pba;.pva", Description = "Aplicações e arquivos de transferência PanelBuilder 32.", IconKey = "DesktopWindows" },
+            new() { Name = "Tia Portal", Extensions = ".ap13;.ap14;.ap15;.ap16;.ap17;.ap18;.ap19;.ap20;.ap21;.zap13;.zap14;.zap15;.zap16;.zap17;.zap18;.zap19;.zap20;.zap21", Description = "Projetos e arquivos compactados Siemens TIA Portal.", IconKey = "DeveloperBoard" },
+            new() { Name = "Wincc Flexible 2008", Extensions = ".hmi;.fwx;.pdz", Description = "Projetos e arquivos de runtime WinCC flexible.", IconKey = "TouchApp" },
+            new() { Name = "Siemens Simatic Manager", Extensions = ".s7p;.s7l;.zap", Description = "Projetos SIMATIC STEP 7 / SIMATIC Manager.", IconKey = "DeveloperBoard" },
+            new() { Name = "Sick Flexi Soft - Safety controllers", Extensions = ".fsp", Description = "Projetos de controladores de segurança SICK Flexi Soft.", IconKey = "Shield" },
+            new() { Name = "schneider electric SoMachine", Extensions = ".project;.projectarchive;.sta", Description = "Projetos e arquivos de aplicação Schneider Electric SoMachine.", IconKey = "DeveloperBoard" },
+            new() { Name = "schneider electric MachineExpert", Extensions = ".project;.projectarchive;.sta", Description = "Projetos e arquivos de aplicação Schneider Electric Machine Expert.", IconKey = "DeveloperBoard" },
+            new() { Name = "ABB Robot Studio", Extensions = ".rsstn;.rspag;.mod;.sys;.cfg", Description = "Estações RobotStudio e arquivos de sistema/programa ABB.", IconKey = "PrecisionManufacturing" },
+            new() { Name = "MS-Excel", Extensions = ".xls;.xlsx;.xlsm;.xlsb;.csv", Description = "Planilhas Microsoft Excel.", IconKey = "Description" },
+            new() { Name = "MS-Word", Extensions = ".doc;.docx;.docm;.rtf", Description = "Documentos Microsoft Word.", IconKey = "Description" },
+            new() { Name = "MS-PowerPoint", Extensions = ".ppt;.pptx;.pptm;.pps;.ppsx", Description = "Apresentações Microsoft PowerPoint.", IconKey = "Description" },
+            new() { Name = "PDF", Extensions = ".pdf", Description = "Documentos no formato PDF.", IconKey = "Description" },
+            new() { Name = "Midias", Extensions = ".jpg;.jpeg;.png;.gif;.bmp;.tif;.tiff;.mp4;.mov;.avi;.mp3;.wav", Description = "Imagens, vídeos e arquivos de áudio.", IconKey = "PermMedia" }
+        };
+
+        if (isFirstInitialization && !db.FileTypes.Any())
+        {
+            db.FileTypes.AddRange(defaultFileTypes);
             db.SaveChanges();
         }
+
+        db.CategoryAppearances
+            .Where(category => category.CategoryKey == "Projeto")
+            .ExecuteDelete();
 
         var existingKeys = db.CategoryAppearances
             .Select(c => c.CategoryKey)

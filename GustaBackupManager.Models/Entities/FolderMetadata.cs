@@ -20,11 +20,6 @@ public enum FolderGroupType
     Equipamento = 2,
 
     /// <summary>
-    /// Agrupador de componente de automacao (exige subcategoria; permite armazenar arquivos).
-    /// </summary>
-    Componente = 4,
-
-    /// <summary>
     /// Agrupador de documentacao tecnica (exige subcategoria; permite armazenar arquivos).
     /// </summary>
     Documentacao = 5,
@@ -48,20 +43,6 @@ public enum LocationSubCategory
     AreaExterna = 6,
     SubestacaoCabineEntrada = 7,
     LinhaProducao = 8
-}
-
-public enum ComponentSubCategory
-{
-    DispositivoDedicado = 0,
-    Clp = 1,
-    Ihm = 2,
-    Inversor = 3,
-    Motion = 4,
-    Instrumento = 5,
-    Safe = 6,
-    Rede = 7,
-    Switch = 8,
-    Robo = 9
 }
 
 public enum ProjectCategory
@@ -141,11 +122,6 @@ public class ProjectMetadataDetails
     public string AllowedExtensions { get; set; } = string.Empty;
 }
 
-public class ComponentMetadataDetails
-{
-    public string Observations { get; set; } = string.Empty;
-}
-
 /// <summary>
 /// Estrutura serializada no arquivo "folder.meta.json" presente em cada pasta no servidor SMB.
 /// </summary>
@@ -166,7 +142,6 @@ public class FolderMetadata
 
     public FolderGroupType Group { get; set; } = FolderGroupType.Localizacao;
     public LocationSubCategory? LocationCategory { get; set; }
-    public ComponentSubCategory? ComponentCategory { get; set; }
     public DocumentationSubCategory? DocumentationCategory { get; set; }
 
     public string IconKey { get; set; } = "Factory";
@@ -175,14 +150,13 @@ public class FolderMetadata
     // Informacoes especificas conforme o tipo da pasta
     public FactoryMetadataDetails? FactoryInfo { get; set; }
     public EquipmentMetadataDetails? EquipmentInfo { get; set; }
-    public ComponentMetadataDetails? ComponentInfo { get; set; }
     public ProjectMetadataDetails? ProjectInfo { get; set; }
 
     /// <summary>
-    /// Somente pastas das categorias "Componente" ou "Documentacao" podem armazenar arquivos.
+    /// Somente pastas das categorias "Projeto" ou "Documentacao" podem armazenar arquivos.
     /// </summary>
     [JsonIgnore]
-    public bool AllowFileStorage => Group is FolderGroupType.Componente or FolderGroupType.Projeto or FolderGroupType.Documentacao;
+    public bool AllowFileStorage => Group is FolderGroupType.Projeto or FolderGroupType.Documentacao;
 
     [JsonIgnore]
     public List<int> AllowedFileTypeIds { get; set; } = [];

@@ -123,7 +123,6 @@ public static class FolderIconCatalog
             FolderGroupType.Fabrica => "Fábrica",
             FolderGroupType.Localizacao => "Localização",
             FolderGroupType.Equipamento => "Equipamento",
-            FolderGroupType.Componente => "Componente (legado)",
             FolderGroupType.Projeto => "Projeto",
             FolderGroupType.Documentacao => "Documentação",
             FolderGroupType.Diversas => "Pasta legada",
@@ -142,22 +141,6 @@ public static class FolderIconCatalog
             LocationSubCategory.AreaExterna => "Área Externa",
             LocationSubCategory.SubestacaoCabineEntrada => "Substação/Cabine Entrada",
             LocationSubCategory.LinhaProducao => "Linha de Produção",
-            _ => category.ToString()
-        };
-
-    public static string GetComponentCategoryLabel(ComponentSubCategory category) =>
-        category switch
-        {
-            ComponentSubCategory.DispositivoDedicado => "Dispositivo Dedicado",
-            ComponentSubCategory.Clp => "CLP",
-            ComponentSubCategory.Ihm => "IHM",
-            ComponentSubCategory.Inversor => "Inversor",
-            ComponentSubCategory.Motion => "Motion",
-            ComponentSubCategory.Instrumento => "Instrumento",
-            ComponentSubCategory.Safe => "Safe",
-            ComponentSubCategory.Rede => "Rede",
-            ComponentSubCategory.Switch => "Switch",
-            ComponentSubCategory.Robo => "Robô",
             _ => category.ToString()
         };
 
@@ -182,30 +165,9 @@ public static class FolderIconCatalog
                 => GetLocationCategoryLabel(metadata.LocationCategory.Value),
             FolderGroupType.Projeto when metadata.ProjectInfo?.Category.HasValue == true
                 => metadata.ProjectInfo.Category.Value.GetLabel(),
-            FolderGroupType.Componente when metadata.ComponentCategory.HasValue
-                => GetComponentCategoryLabel(metadata.ComponentCategory.Value),
             FolderGroupType.Documentacao when metadata.DocumentationCategory.HasValue
                 => GetDocumentationCategoryLabel(metadata.DocumentationCategory.Value),
             _ => null
         };
 
-    public static string ResolveFileIcon(string extension)
-    {
-        return extension.ToLowerInvariant() switch
-        {
-            ".acd" or ".l5x" or ".rss" or ".zap16" or ".zap17" or ".zap18" or ".zap19" or ".zap20" or ".zap21" or ".ap18" or ".s7p"
-                => Icons.Material.Filled.Memory,
-            ".mer" or ".apa" or ".med" or ".fwc" or ".hmi"
-                => Icons.Material.Filled.DesktopWindows,
-            ".ccwsln" or ".pf5" or ".dno" or ".par" or ".wps" or ".ssp"
-                => Icons.Material.Filled.Speed,
-            ".pdf"
-                => Icons.Material.Filled.PictureAsPdf,
-            ".dwg" or ".zw1"
-                => Icons.Material.Filled.Architecture,
-            ".zip" or ".rar" or ".7z"
-                => Icons.Material.Filled.FolderZip,
-            _ => Icons.Material.Filled.InsertDriveFile
-        };
-    }
 }

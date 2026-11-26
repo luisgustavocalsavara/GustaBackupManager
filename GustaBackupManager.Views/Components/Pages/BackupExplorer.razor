@@ -144,7 +144,7 @@ else
                     <MudIcon Icon="@Icons.Material.Filled.TouchApp" Color="Color.Primary" Size="Size.Large" Class="mb-2" />
                     <MudText Typo="Typo.h6" Class="mb-1">Selecione uma pasta na árvore</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Clique em uma Fábrica, Localização, Equipamento, Componente ou Documentação à esquerda para ver os metadados do <code>folder.meta.json</code> e os backups armazenados.
+                        Clique em uma Fábrica, Localização, Equipamento, Projeto ou Documentação à esquerda para ver os metadados do <code>folder.meta.json</code> e os backups armazenados.
                     </MudText>
                 </MudPaper>
             }
@@ -275,14 +275,6 @@ else
                             </MudItem>
                         </MudGrid>
                     }
-                    else if (_selectedNode.Metadata.Group == FolderGroupType.Componente &&
-                             (!string.IsNullOrWhiteSpace(_selectedNode.Metadata.Description) ||
-                              !string.IsNullOrWhiteSpace(_selectedNode.Metadata.ComponentInfo?.Observations)))
-                    {
-                        <MudDivider Class="my-2" />
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Observações</MudText>
-                        <MudText Typo="Typo.body2">@(string.IsNullOrWhiteSpace(_selectedNode.Metadata.Description) ? _selectedNode.Metadata.ComponentInfo?.Observations : _selectedNode.Metadata.Description)</MudText>
-                    }
                     else if (!string.IsNullOrWhiteSpace(_selectedNode.Metadata.Description))
                     {
                         <MudText Typo="Typo.body2" Class="mt-2">@_selectedNode.Metadata.Description</MudText>
@@ -392,7 +384,7 @@ else
                         <MudPaper Outlined="true" Class="pa-3 mb-3">
                             <MudText Typo="Typo.body2">
                                 Pastas do tipo <b>@FolderIconCatalog.GetGroupLabel(_selectedNode.Metadata.Group)</b> são organizadoras da estrutura.
-                                Os arquivos só podem ser armazenados dentro de pastas da categoria <b>Componente</b> ou <b>Documentação</b>.
+                                Os arquivos só podem ser armazenados dentro de pastas da categoria <b>Projeto</b> ou <b>Documentação</b>.
                             </MudText>
                         </MudPaper>
                     }
@@ -417,7 +409,7 @@ else
                                 <RowTemplate>
                                     <MudTd DataLabel="Arquivo" Class="backup-file-name-cell">
                                         <div class="d-flex align-center gap-2">
-                                            <MudIcon Icon="@FolderIconCatalog.ResolveFileIcon(context.Extension)"
+                                            <MudIcon Icon="@GetFileTypeIcon(context.Extension)"
                                                      Color="@(context.IsAllowedByFolderPolicy ? Color.Primary : Color.Warning)"
                                                      Size="Size.Small" />
                                             <div>
@@ -533,6 +525,14 @@ else
             .OrderByDescending(file => file.ArchivedAt)
             .ThenBy(file => file.FileName, StringComparer.OrdinalIgnoreCase);
 
+    private string GetFileTypeIcon(string extension)
+    {
+        var fileType = _repositoryTypes.FirstOrDefault(type =>
+            type.GetNormalizedExtensions().Contains(extension, StringComparer.OrdinalIgnoreCase));
+
+        return FolderIconCatalog.ResolveIcon(fileType?.IconKey);
+    }
+
     private bool IsLatestBackup(BackupFileItem file)
     {
         var latestFile = _files
@@ -638,8 +638,7 @@ else
         var selfMatches = string.IsNullOrWhiteSpace(filter) ||
                           node.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
                           node.Metadata.ShortName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                          node.Metadata.Description.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                          (node.Metadata.ComponentInfo?.Observations.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
+                          node.Metadata.Description.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
         if (!selfMatches && childItems.Count == 0)
             return null;

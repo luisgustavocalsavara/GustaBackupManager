@@ -19,10 +19,10 @@ public class FolderCategoryConfigService(IDbContextFactory<AppDbContext> dbFacto
     public async Task<(string IconKey, string IconColor)> ResolveAppearanceAsync(
         FolderGroupType group,
         LocationSubCategory? locationCategory = null,
-        ComponentSubCategory? componentCategory = null,
+        ProjectCategory? projectCategory = null,
         DocumentationSubCategory? documentationCategory = null)
     {
-        var key = BuildCategoryKey(group, locationCategory, componentCategory, documentationCategory);
+        var key = BuildCategoryKey(group, locationCategory, projectCategory, documentationCategory);
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var item = await db.CategoryAppearances
@@ -34,7 +34,7 @@ public class FolderCategoryConfigService(IDbContextFactory<AppDbContext> dbFacto
             return (item.IconKey, string.IsNullOrWhiteSpace(item.IconColor) ? "Default" : item.IconColor);
         }
 
-        return GetDefaultSuggestion(group, locationCategory, componentCategory, documentationCategory);
+        return GetDefaultSuggestion(group, locationCategory, projectCategory, documentationCategory);
     }
 
     public async Task<(bool Success, string Message)> SaveAsync(int id, string iconKey, string iconColor)
@@ -77,13 +77,12 @@ public class FolderCategoryConfigService(IDbContextFactory<AppDbContext> dbFacto
     public static string BuildCategoryKey(
         FolderGroupType group,
         LocationSubCategory? locationCategory = null,
-        ComponentSubCategory? componentCategory = null,
+        ProjectCategory? projectCategory = null,
         DocumentationSubCategory? documentationCategory = null) =>
         group switch
         {
             FolderGroupType.Localizacao => $"Localizacao:{locationCategory ?? LocationSubCategory.Manufatura}",
-            FolderGroupType.Componente => $"Componente:{componentCategory ?? ComponentSubCategory.Clp}",
-            FolderGroupType.Projeto => "Projeto",
+            FolderGroupType.Projeto => $"Projeto:{projectCategory ?? ProjectCategory.Clp}",
             FolderGroupType.Documentacao => $"Documentacao:{documentationCategory ?? DocumentationSubCategory.ManualTecnico}",
             _ => group.ToString()
         };
@@ -91,10 +90,10 @@ public class FolderCategoryConfigService(IDbContextFactory<AppDbContext> dbFacto
     public static (string IconKey, string IconColor) GetDefaultSuggestion(
         FolderGroupType group,
         LocationSubCategory? locationCategory = null,
-        ComponentSubCategory? componentCategory = null,
+        ProjectCategory? projectCategory = null,
         DocumentationSubCategory? documentationCategory = null)
     {
-        var key = BuildCategoryKey(group, locationCategory, componentCategory, documentationCategory);
+        var key = BuildCategoryKey(group, locationCategory, projectCategory, documentationCategory);
         var match = BuildDefaultDefinitions().FirstOrDefault(d => d.CategoryKey == key);
         return match is not null
             ? (match.IconKey, match.IconColor)
@@ -222,108 +221,6 @@ public class FolderCategoryConfigService(IDbContextFactory<AppDbContext> dbFacto
                 UpdatedAt = now
             },
 
-            // 4. Componente (10 categorias)
-            new()
-            {
-                CategoryKey = "Componente:DispositivoDedicado",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "Dispositivo Dedicado",
-                DisplayName = "Componente - Dispositivo Dedicado",
-                IconKey = "DeveloperBoard",
-                IconColor = "Success",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Clp",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "CLP",
-                DisplayName = "Componente - CLP",
-                IconKey = "Memory",
-                IconColor = "Success",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Ihm",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "IHM",
-                DisplayName = "Componente - IHM",
-                IconKey = "DesktopWindows",
-                IconColor = "Secondary",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Inversor",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "Inversor",
-                DisplayName = "Componente - Inversor",
-                IconKey = "Speed",
-                IconColor = "Warning",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Motion",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "Motion",
-                DisplayName = "Componente - Motion",
-                IconKey = "Tune",
-                IconColor = "Info",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Instrumento",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "Instrumento",
-                DisplayName = "Componente - Instrumento",
-                IconKey = "Sensors",
-                IconColor = "Info",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Safe",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "Safe",
-                DisplayName = "Componente - Safe",
-                IconKey = "Shield",
-                IconColor = "Error",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Rede",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "Rede",
-                DisplayName = "Componente - Rede",
-                IconKey = "Hub",
-                IconColor = "Info",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Switch",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "Switch",
-                DisplayName = "Componente - Switch",
-                IconKey = "Router",
-                IconColor = "Info",
-                UpdatedAt = now
-            },
-            new()
-            {
-                CategoryKey = "Componente:Robo",
-                Group = FolderGroupType.Componente,
-                SubCategoryName = "Robô",
-                DisplayName = "Componente - Robô",
-                IconKey = "PrecisionManufacturing",
-                IconColor = "Error",
-                UpdatedAt = now
-            },
-
             // 5. Documentação (8 categorias)
             new()
             {
@@ -406,15 +303,85 @@ public class FolderCategoryConfigService(IDbContextFactory<AppDbContext> dbFacto
                 UpdatedAt = now
             },
 
-            // Projeto (catalogo de ambientes de engenharia)
+            // Categorias de Projeto
             new()
             {
-                CategoryKey = "Projeto",
+                CategoryKey = "Projeto:Clp",
                 Group = FolderGroupType.Projeto,
-                SubCategoryName = string.Empty,
-                DisplayName = "Projeto",
+                SubCategoryName = ProjectCategory.Clp.GetLabel(),
+                DisplayName = ProjectCategory.Clp.GetLabel(),
                 IconKey = "Memory",
+                IconColor = "Success",
+                UpdatedAt = now
+            },
+            new()
+            {
+                CategoryKey = "Projeto:Ihm",
+                Group = FolderGroupType.Projeto,
+                SubCategoryName = ProjectCategory.Ihm.GetLabel(),
+                DisplayName = ProjectCategory.Ihm.GetLabel(),
+                IconKey = "DesktopWindows",
+                IconColor = "Secondary",
+                UpdatedAt = now
+            },
+            new()
+            {
+                CategoryKey = "Projeto:Rede",
+                Group = FolderGroupType.Projeto,
+                SubCategoryName = ProjectCategory.Rede.GetLabel(),
+                DisplayName = ProjectCategory.Rede.GetLabel(),
+                IconKey = "Hub",
                 IconColor = "Info",
+                UpdatedAt = now
+            },
+            new()
+            {
+                CategoryKey = "Projeto:Motion",
+                Group = FolderGroupType.Projeto,
+                SubCategoryName = ProjectCategory.Motion.GetLabel(),
+                DisplayName = ProjectCategory.Motion.GetLabel(),
+                IconKey = "Tune",
+                IconColor = "Info",
+                UpdatedAt = now
+            },
+            new()
+            {
+                CategoryKey = "Projeto:Robot",
+                Group = FolderGroupType.Projeto,
+                SubCategoryName = ProjectCategory.Robot.GetLabel(),
+                DisplayName = ProjectCategory.Robot.GetLabel(),
+                IconKey = "PrecisionManufacturing",
+                IconColor = "Error",
+                UpdatedAt = now
+            },
+            new()
+            {
+                CategoryKey = "Projeto:Safety",
+                Group = FolderGroupType.Projeto,
+                SubCategoryName = ProjectCategory.Safety.GetLabel(),
+                DisplayName = ProjectCategory.Safety.GetLabel(),
+                IconKey = "Shield",
+                IconColor = "Error",
+                UpdatedAt = now
+            },
+            new()
+            {
+                CategoryKey = "Projeto:Drives",
+                Group = FolderGroupType.Projeto,
+                SubCategoryName = ProjectCategory.Drives.GetLabel(),
+                DisplayName = ProjectCategory.Drives.GetLabel(),
+                IconKey = "Speed",
+                IconColor = "Warning",
+                UpdatedAt = now
+            },
+            new()
+            {
+                CategoryKey = "Projeto:Outros",
+                Group = FolderGroupType.Projeto,
+                SubCategoryName = ProjectCategory.Outros.GetLabel(),
+                DisplayName = ProjectCategory.Outros.GetLabel(),
+                IconKey = "Folder",
+                IconColor = "Default",
                 UpdatedAt = now
             }
         ];

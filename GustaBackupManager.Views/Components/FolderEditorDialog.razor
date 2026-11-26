@@ -295,27 +295,31 @@
                             }
                             else
                             {
-                                <MudGrid Spacing="1" Class="mb-2">
+                                <MudGrid Spacing="2" Class="mb-2">
                                     @foreach (var ft in AvailableFileTypes)
                                     {
                                         <MudItem xs="12" sm="6">
-                                            <MudCheckBox T="bool"
-                                                         Value="@IsRepositoryTypeSelected(ft.Id)"
-                                                         ValueChanged="@((bool selected) => OnRepositoryFileTypeCheckboxChangedAsync(ft.Id, selected))"
-                                                         Dense="true"
-                                                         Color="Color.Primary">
+                                            <MudPaper Outlined="true" Class="pa-3 h-100">
                                                 <div class="d-flex align-start gap-2">
+                                                    <MudCheckBox T="bool"
+                                                                 Value="@IsRepositoryTypeSelected(ft.Id)"
+                                                                 ValueChanged="@((bool selected) => OnRepositoryFileTypeCheckboxChangedAsync(ft.Id, selected))"
+                                                                 Dense="true"
+                                                                 Color="Color.Primary"
+                                                                 Class="mt-n1" />
                                                     <MudIcon Icon="@FolderIconCatalog.ResolveIcon(ft.IconKey)" Color="Color.Primary" Size="Size.Small" Class="mt-1" />
-                                                    <div>
+                                                    <div class="flex-grow-1">
                                                         <MudText Typo="Typo.body2"><b>@ft.Name</b></MudText>
-                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@ft.Extensions</MudText>
                                                         @if (!string.IsNullOrWhiteSpace(ft.Description))
                                                         {
-                                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@ft.Description</MudText>
+                                                            <MudText Typo="Typo.caption" Class="d-block mt-1">@ft.Description</MudText>
                                                         }
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-2">
+                                                            <b>Extensões:</b> @string.Join(" · ", ft.GetNormalizedExtensions())
+                                                        </MudText>
                                                     </div>
                                                 </div>
-                                            </MudCheckBox>
+                                            </MudPaper>
                                         </MudItem>
                                     }
                                 </MudGrid>
@@ -393,7 +397,7 @@
         _model.Group is FolderGroupType.Localizacao or FolderGroupType.Projeto or FolderGroupType.Documentacao;
 
     private bool AllowsFileStorage =>
-        _model.Group is FolderGroupType.Componente or FolderGroupType.Projeto or FolderGroupType.Documentacao;
+        _model.Group is FolderGroupType.Projeto or FolderGroupType.Documentacao;
 
     private List<FileTypeDefinition> AvailableFileTypes => FilterFileTypes(
         _model.Group == FolderGroupType.Projeto
@@ -427,13 +431,18 @@
             {
                 Name = InitialMetadata.Name,
                 ShortName = InitialMetadata.ShortName,
-                Description = InitialMetadata.Group == FolderGroupType.Componente && string.IsNullOrWhiteSpace(InitialMetadata.Description)
-                    ? InitialMetadata.ComponentInfo?.Observations ?? string.Empty
-                    : InitialMetadata.Description,
-                Group = IsRootLevel ? FolderGroupType.Fabrica : (InitialMetadata.Group == FolderGroupType.Componente ? FolderGroupType.Projeto : InitialMetadata.Group),
+                Description = InitialMetadata.Description,
+                Group = IsRootLevel ? FolderGroupType.Fabrica : InitialMetadata.Group,
                 LocationCategory = InitialMetadata.LocationCategory ?? LocationSubCategory.Manufatura,
-                ComponentCategory = InitialMetadata.ComponentCategory ?? ComponentSubCategory.Clp,
-                ProjectInfo = InitialMetadata.ProjectInfo is null ? new ProjectMetadataDetails { Category = InitialMetadata.ComponentCategory == ComponentSubCategory.Ihm ? ProjectCategory.Ihm : InitialMetadata.ComponentCategory == ComponentSubCategory.Rede || InitialMetadata.ComponentCategory == ComponentSubCategory.Switch ? ProjectCategory.Rede : ProjectCategory.Clp, ProjectName = InitialMetadata.Name, AllowedExtensions = string.Join(";", InitialMetadata.AllowedExtensions) } : new ProjectMetadataDetails { FileTypeId = InitialMetadata.ProjectInfo.FileTypeId, Category = InitialMetadata.ProjectInfo.Category, ProjectName = InitialMetadata.ProjectInfo.ProjectName, AllowedExtensions = InitialMetadata.ProjectInfo.AllowedExtensions },
+                ProjectInfo = InitialMetadata.ProjectInfo is null
+                    ? new ProjectMetadataDetails { Category = ProjectCategory.Clp, ProjectName = InitialMetadata.Name, AllowedExtensions = string.Join(";", InitialMetadata.AllowedExtensions) }
+                    : new ProjectMetadataDetails
+                    {
+                        FileTypeId = InitialMetadata.ProjectInfo.FileTypeId,
+                        Category = InitialMetadata.ProjectInfo.Category ?? ProjectCategory.Clp,
+                        ProjectName = InitialMetadata.ProjectInfo.ProjectName,
+                        AllowedExtensions = InitialMetadata.ProjectInfo.AllowedExtensions
+                    },
                 DocumentationCategory = InitialMetadata.DocumentationCategory ?? DocumentationSubCategory.ManualTecnico,
                 IconKey = InitialMetadata.IconKey,
                 IconColor = InitialMetadata.IconColor,
@@ -454,12 +463,6 @@
                         Modelo = InitialMetadata.EquipmentInfo.Modelo,
                         AnoFabricacao = InitialMetadata.EquipmentInfo.AnoFabricacao,
                         NumeroSerie = InitialMetadata.EquipmentInfo.NumeroSerie
-                    },
-                ComponentInfo = InitialMetadata.ComponentInfo is null
-                    ? new ComponentMetadataDetails()
-                    : new ComponentMetadataDetails
-                    {
-                        Observations = InitialMetadata.ComponentInfo.Observations
                     },
                 AllowedFileTypeIds = [.. InitialMetadata.AllowedFileTypeIds]
             };
@@ -495,7 +498,7 @@
         var (iconKey, iconColor) = await CategoryConfigService.ResolveAppearanceAsync(
             _model.Group,
             _model.LocationCategory,
-            _model.ComponentCategory,
+            _model.ProjectInfo.Category,
             _model.DocumentationCategory);
 
         _model.IconKey = iconKey;
@@ -507,7 +510,6 @@
         {
             FolderGroupType.Localizacao => $"Localização - {FolderIconCatalog.GetLocationCategoryLabel(_model.LocationCategory ?? LocationSubCategory.Manufatura)}",
             FolderGroupType.Projeto => (_model.ProjectInfo.Category ?? ProjectCategory.Clp).GetLabel(),
-            FolderGroupType.Componente => $"Componente - {FolderIconCatalog.GetComponentCategoryLabel(_model.ComponentCategory ?? ComponentSubCategory.Clp)}",
             FolderGroupType.Documentacao => $"Documentação - {FolderIconCatalog.GetDocumentationCategoryLabel(_model.DocumentationCategory ?? DocumentationSubCategory.ManualTecnico)}",
             _ => FolderIconCatalog.GetGroupLabel(_model.Group)
         };
@@ -519,13 +521,12 @@
             FolderGroupType.Localizacao => "Ex.: Estocagem ou Setor 01",
             FolderGroupType.Equipamento => "Ex.: Encaixotador",
             FolderGroupType.Projeto => "Ex.: Projeto CLP Linha 01",
-            FolderGroupType.Componente => "Ex.: CLP ou CLP 02",
             FolderGroupType.Documentacao => "Ex.: Diagrama Elétrico",
             _ => "Ex.: Arquivos Gerais"
         };
 
     private string GetNameHelperText() =>
-        _model.Group is FolderGroupType.Projeto or FolderGroupType.Componente or FolderGroupType.Documentacao
+        _model.Group is FolderGroupType.Projeto or FolderGroupType.Documentacao
             ? "Você pode editar o nome para identificar a instância do projeto (ex.: CLP Linha 01)."
             : "Nome da pasta que será criada no servidor SMB.";
 

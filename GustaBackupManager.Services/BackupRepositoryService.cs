@@ -166,7 +166,7 @@ public class BackupRepositoryService(
         if (Directory.Exists(targetPath))
             return new OperationResult<FolderTreeNode>(false, $"Já existe uma pasta chamada '{cleanName}' neste local.");
 
-        var allowsFiles = request.Group is FolderGroupType.Componente or FolderGroupType.Projeto or FolderGroupType.Documentacao;
+        var allowsFiles = request.Group is FolderGroupType.Projeto or FolderGroupType.Documentacao;
         List<string> extensions = allowsFiles
             ? await ResolveAllowedTypesAsync(request)
             : [];
@@ -181,7 +181,7 @@ public class BackupRepositoryService(
             var (configuredIcon, configuredColor) = await categoryConfigService.ResolveAppearanceAsync(
                 request.Group,
                 request.LocationCategory,
-                request.ComponentCategory,
+                request.ProjectInfo.Category,
                 request.DocumentationCategory);
 
             var now = DateTime.Now;
@@ -250,7 +250,7 @@ public class BackupRepositoryService(
         if (!fileTypeValidation.Success)
             return new OperationResult<FolderMetadata>(false, fileTypeValidation.Message);
 
-        var allowsFiles = request.Group is FolderGroupType.Componente or FolderGroupType.Projeto or FolderGroupType.Documentacao;
+        var allowsFiles = request.Group is FolderGroupType.Projeto or FolderGroupType.Documentacao;
         List<string> extensions = allowsFiles
             ? await ResolveAllowedTypesAsync(request)
             : [];
@@ -280,7 +280,7 @@ public class BackupRepositoryService(
             var (configuredIcon, configuredColor) = await categoryConfigService.ResolveAppearanceAsync(
                 request.Group,
                 request.LocationCategory,
-                request.ComponentCategory,
+                request.ProjectInfo.Category,
                 request.DocumentationCategory);
 
             metadata.Name = cleanName;
@@ -690,7 +690,7 @@ public class BackupRepositoryService(
     public async Task<OperationResult<int>> SyncCategoryAppearanceAcrossFoldersAsync(
         FolderGroupType group,
         LocationSubCategory? locationCategory,
-        ComponentSubCategory? componentCategory,
+        ProjectCategory? projectCategory,
         DocumentationSubCategory? documentationCategory,
         string iconKey,
         string iconColor)
@@ -705,7 +705,7 @@ public class BackupRepositoryService(
             m.Group == group && group switch
             {
                 FolderGroupType.Localizacao => m.LocationCategory == locationCategory,
-                FolderGroupType.Componente => m.ComponentCategory == componentCategory,
+                FolderGroupType.Projeto => m.ProjectInfo?.Category == projectCategory,
                 FolderGroupType.Documentacao => m.DocumentationCategory == documentationCategory,
                 _ => true
             };
@@ -765,7 +765,6 @@ public class BackupRepositoryService(
             return new OperationResult(false, conn.Message);
 
         var fileTypes = await fileTypeService.GetAllAsync(onlyActive: true);
-        int? FindTypeId(string name) => fileTypes.FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase))?.Id;
 
         var fabApp = await categoryConfigService.ResolveAppearanceAsync(FolderGroupType.Fabrica);
         var fabricaRes = await CreateOrGetFolderAsync(conn.RootPath, new FolderEditRequest
@@ -829,71 +828,38 @@ public class BackupRepositoryService(
         });
         if (!equipRes.Success || equipRes.Data is null) return new OperationResult(false, equipRes.Message);
 
-        var clpTypeId = FindTypeId("Studio 5000");
-        var ihmTypeId = FindTypeId("FactoryTalk View");
-        var invTypeId = FindTypeId("Inversores de Frequência");
-        var docTypeId = FindTypeId("Diagramas Elétricos");
-
-        var clpApp = await categoryConfigService.ResolveAppearanceAsync(FolderGroupType.Componente, componentCategory: ComponentSubCategory.Clp);
-        await CreateOrGetFolderAsync(equipRes.Data.FullPath, new FolderEditRequest
+        if (fileTypes.Count > 0)
         {
-            Name = "CLP",
-            ShortName = "CLP",
-            Group = FolderGroupType.Componente,
-            ComponentCategory = ComponentSubCategory.Clp,
-            IconKey = clpApp.IconKey,
-            IconColor = clpApp.IconColor,
-            ComponentInfo = new ComponentMetadataDetails
+            var exampleType = fileTypes[0];
+            var projectResult = await CreateOrGetFolderAsync(equipRes.Data.FullPath, new FolderEditRequest
             {
-                Observations = "Controlador principal da linha."
-            },
-            AllowedFileTypeIds = clpTypeId.HasValue ? [clpTypeId.Value] : []
-        });
+                Name = "Projeto de Exemplo",
+                ShortName = "Projeto",
+                Group = FolderGroupType.Projeto,
+                ProjectInfo = new ProjectMetadataDetails
+                {
+                    FileTypeId = exampleType.Id,
+                    Category = ProjectCategory.Outros,
+                    ProjectName = "Projeto de Exemplo"
+                },
+                AllowedFileTypeIds = [exampleType.Id]
+            });
+            if (!projectResult.Success) return new OperationResult(false, projectResult.Message);
 
-        var ihmApp = await categoryConfigService.ResolveAppearanceAsync(FolderGroupType.Componente, componentCategory: ComponentSubCategory.Ihm);
-        await CreateOrGetFolderAsync(equipRes.Data.FullPath, new FolderEditRequest
-        {
-            Name = "IHM",
-            ShortName = "IHM",
-            Group = FolderGroupType.Componente,
-            ComponentCategory = ComponentSubCategory.Ihm,
-            IconKey = ihmApp.IconKey,
-            IconColor = ihmApp.IconColor,
-            ComponentInfo = new ComponentMetadataDetails
+            var docApp = await categoryConfigService.ResolveAppearanceAsync(FolderGroupType.Documentacao, documentationCategory: DocumentationSubCategory.DiagramaEletrico);
+            var documentationResult = await CreateOrGetFolderAsync(equipRes.Data.FullPath, new FolderEditRequest
             {
-                Observations = "Interface de operação da linha."
-            },
-            AllowedFileTypeIds = ihmTypeId.HasValue ? [ihmTypeId.Value] : []
-        });
-
-        var invApp = await categoryConfigService.ResolveAppearanceAsync(FolderGroupType.Componente, componentCategory: ComponentSubCategory.Inversor);
-        await CreateOrGetFolderAsync(equipRes.Data.FullPath, new FolderEditRequest
-        {
-            Name = "Inversor",
-            ShortName = "INV",
-            Group = FolderGroupType.Componente,
-            ComponentCategory = ComponentSubCategory.Inversor,
-            IconKey = invApp.IconKey,
-            IconColor = invApp.IconColor,
-            ComponentInfo = new ComponentMetadataDetails
-            {
-                Observations = "Inversor de frequência do motor de alimentação."
-            },
-            AllowedFileTypeIds = invTypeId.HasValue ? [invTypeId.Value] : []
-        });
-
-        var docApp = await categoryConfigService.ResolveAppearanceAsync(FolderGroupType.Documentacao, documentationCategory: DocumentationSubCategory.DiagramaEletrico);
-        await CreateOrGetFolderAsync(equipRes.Data.FullPath, new FolderEditRequest
-        {
-            Name = "Diagrama Elétrico",
-            ShortName = "DE",
-            Group = FolderGroupType.Documentacao,
-            DocumentationCategory = DocumentationSubCategory.DiagramaEletrico,
-            Description = "Esquemas elétricos as-built em PDF e EPLAN.",
-            IconKey = docApp.IconKey,
-            IconColor = docApp.IconColor,
-            AllowedFileTypeIds = docTypeId.HasValue ? [docTypeId.Value] : []
-        });
+                Name = "Diagrama Elétrico",
+                ShortName = "DE",
+                Group = FolderGroupType.Documentacao,
+                DocumentationCategory = DocumentationSubCategory.DiagramaEletrico,
+                Description = "Documentação técnica da máquina.",
+                IconKey = docApp.IconKey,
+                IconColor = docApp.IconColor,
+                AllowedFileTypeIds = fileTypes.Select(type => type.Id).ToList()
+            });
+            if (!documentationResult.Success) return new OperationResult(false, documentationResult.Message);
+        }
 
         return new OperationResult(true, "Estrutura industrial de exemplo criada com sucesso!");
     }
@@ -902,12 +868,10 @@ public class BackupRepositoryService(
     {
         metadata.Group = request.Group;
         metadata.LocationCategory = request.Group == FolderGroupType.Localizacao ? request.LocationCategory : null;
-        metadata.ComponentCategory = request.Group == FolderGroupType.Componente ? request.ComponentCategory : null;
         metadata.DocumentationCategory = request.Group == FolderGroupType.Documentacao ? request.DocumentationCategory : null;
 
         metadata.FactoryInfo = null;
         metadata.EquipmentInfo = null;
-        metadata.ComponentInfo = null;
         metadata.ProjectInfo = null;
 
         switch (request.Group)
@@ -944,15 +908,6 @@ public class BackupRepositoryService(
                     Category = pr.Category,
                     ProjectName = pr.ProjectName?.Trim() ?? string.Empty,
                     AllowedExtensions = pr.AllowedExtensions?.Trim() ?? string.Empty
-                };
-                metadata.Description = request.Description?.Trim() ?? string.Empty;
-                break;
-
-            case FolderGroupType.Componente:
-                var cp = request.ComponentInfo ?? new ComponentMetadataDetails();
-                metadata.ComponentInfo = new ComponentMetadataDetails
-                {
-                    Observations = cp.Observations?.Trim() ?? string.Empty
                 };
                 metadata.Description = request.Description?.Trim() ?? string.Empty;
                 break;
@@ -1005,10 +960,6 @@ public class BackupRepositoryService(
 
         if (request.Group == FolderGroupType.Projeto && !request.ProjectInfo.FileTypeId.HasValue)
             return new OperationResult(false, "Selecione um software cadastrado em Tipos de Repositório.");
-
-        if (request.Group == FolderGroupType.Componente &&
-            (!request.ComponentCategory.HasValue || !Enum.IsDefined(request.ComponentCategory.Value)))
-            return new OperationResult(false, "Selecione uma categoria válida para Componente (estrutura antiga).");
 
         if (request.Group == FolderGroupType.Documentacao &&
             (!request.DocumentationCategory.HasValue || !Enum.IsDefined(request.DocumentationCategory.Value)))

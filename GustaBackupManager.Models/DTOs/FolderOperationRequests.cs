@@ -10,7 +10,6 @@ public class FolderEditRequest
 
     public FolderGroupType Group { get; set; } = FolderGroupType.Localizacao;
     public LocationSubCategory? LocationCategory { get; set; } = LocationSubCategory.Manufatura;
-    public ComponentSubCategory? ComponentCategory { get; set; } = ComponentSubCategory.Clp;
     public DocumentationSubCategory? DocumentationCategory { get; set; } = DocumentationSubCategory.ManualTecnico;
 
     public string IconKey { get; set; } = "Factory";
@@ -19,7 +18,6 @@ public class FolderEditRequest
     // Informacoes especificas por tipo de pasta
     public FactoryMetadataDetails FactoryInfo { get; set; } = new();
     public EquipmentMetadataDetails EquipmentInfo { get; set; } = new();
-    public ComponentMetadataDetails ComponentInfo { get; set; } = new();
     public ProjectMetadataDetails ProjectInfo { get; set; } = new();
 
     public List<int> AllowedFileTypeIds { get; set; } = [];

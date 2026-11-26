@@ -415,9 +415,9 @@
 
             if (_syncExistingFolders && SmbConnectionService.LastStatus.IsConnected)
             {
-                var (loc, comp, doc) = ParseSubCategories(_selected);
+                var (loc, project, doc) = ParseSubCategories(_selected);
                 var syncRes = await BackupRepositoryService.SyncCategoryAppearanceAcrossFoldersAsync(
-                    _selected.Group, loc, comp, doc, _editIconKey, _editIconColor);
+                    _selected.Group, loc, project, doc, _editIconKey, _editIconColor);
                 Snackbar.Add(syncRes.Message, syncRes.Success ? Severity.Info : Severity.Warning);
             }
 
@@ -454,7 +454,7 @@
         FolderIconCatalog.ColorsList.FirstOrDefault(c =>
             string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase))?.Label ?? key;
 
-    private static (LocationSubCategory? Loc, ComponentSubCategory? Comp, DocumentationSubCategory? Doc) ParseSubCategories(FolderCategoryAppearance item)
+    private static (LocationSubCategory? Loc, ProjectCategory? Project, DocumentationSubCategory? Doc) ParseSubCategories(FolderCategoryAppearance item)
     {
         var parts = item.CategoryKey.Split(':');
         if (parts.Length < 2)
@@ -463,7 +463,7 @@
         return item.Group switch
         {
             FolderGroupType.Localizacao when Enum.TryParse<LocationSubCategory>(parts[1], out var loc) => (loc, null, null),
-            FolderGroupType.Componente when Enum.TryParse<ComponentSubCategory>(parts[1], out var comp) => (null, comp, null),
+            FolderGroupType.Projeto when Enum.TryParse<ProjectCategory>(parts[1], out var project) => (null, project, null),
             FolderGroupType.Documentacao when Enum.TryParse<DocumentationSubCategory>(parts[1], out var doc) => (null, null, doc),
             _ => (null, null, null)
         };

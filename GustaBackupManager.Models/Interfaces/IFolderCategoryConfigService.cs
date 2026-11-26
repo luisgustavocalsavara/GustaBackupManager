@@ -9,7 +9,7 @@ public interface IFolderCategoryConfigService
     Task<(string IconKey, string IconColor)> ResolveAppearanceAsync(
         FolderGroupType group,
         LocationSubCategory? locationCategory = null,
-        ComponentSubCategory? componentCategory = null,
+        ProjectCategory? projectCategory = null,
         DocumentationSubCategory? documentationCategory = null);
 
     Task<(bool Success, string Message)> SaveAsync(int id, string iconKey, string iconColor);

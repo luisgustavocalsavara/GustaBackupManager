@@ -5,7 +5,7 @@ public class FolderCategoryAppearance
     public int Id { get; set; }
 
     /// <summary>
-    /// Chave unica da categoria (ex.: "Fabrica", "Localizacao:Manufatura", "Componente:Clp", "Equipamento").
+    /// Chave unica da categoria (ex.: "Fabrica", "Localizacao:Manufatura", "Projeto", "Equipamento").
     /// </summary>
     public string CategoryKey { get; set; } = string.Empty;
 
@@ -17,7 +17,7 @@ public class FolderCategoryAppearance
     public string SubCategoryName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Nome de exibicao completo (ex.: "Componente - CLP", "Fábrica").
+    /// Nome de exibicao completo (ex.: "Projeto", "Fábrica").
     /// </summary>
     public string DisplayName { get; set; } = string.Empty;
 

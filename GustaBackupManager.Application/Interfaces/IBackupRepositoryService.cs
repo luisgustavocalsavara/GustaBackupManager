@@ -21,7 +21,7 @@ public interface IBackupRepositoryService
     Task<OperationResult<int>> SyncCategoryAppearanceAcrossFoldersAsync(
         FolderGroupType group,
         LocationSubCategory? locationCategory,
-        ComponentSubCategory? componentCategory,
+        ProjectCategory? projectCategory,
         DocumentationSubCategory? documentationCategory,
         string iconKey,
         string iconColor);
