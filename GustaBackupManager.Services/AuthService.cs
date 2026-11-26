@@ -24,14 +24,8 @@ public class AuthService(IDbContextFactory<AppDbContext> dbFactory) : IAuthServi
         var user = await db.Users
             .FirstOrDefaultAsync(u => u.Username.ToLower() == normalizedUser.ToLower());
 
-        if (user is null || !AppDbContext.VerifyPassword(password, user.PasswordHash, out var needsUpgrade))
+        if (user is null || !AppDbContext.VerifyPassword(password, user.PasswordHash))
             return (false, "Usuário ou senha inválidos.");
-
-        if (needsUpgrade)
-        {
-            user.PasswordHash = AppDbContext.HashPassword(password);
-            await db.SaveChangesAsync();
-        }
 
         CurrentUser = user;
         AuthStateChanged?.Invoke();
@@ -92,7 +86,7 @@ public class AuthService(IDbContextFactory<AppDbContext> dbFactory) : IAuthServi
         if (user is null)
             return (false, "O usuário conectado não foi encontrado.");
 
-        if (!AppDbContext.VerifyPassword(currentPassword, user.PasswordHash, out var needsUpgrade))
+        if (!AppDbContext.VerifyPassword(currentPassword, user.PasswordHash))
             return (false, "A senha atual está incorreta.");
 
         user.PasswordHash = AppDbContext.HashPassword(newPassword);

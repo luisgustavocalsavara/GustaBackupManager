@@ -30,14 +30,6 @@
                 Nova Fábrica (Raiz)
             </MudButton>
         }
-        <MudButton Variant="Variant.Outlined"
-                   Color="Color.Default"
-                   Size="Size.Small"
-                   StartIcon="@Icons.Material.Filled.Refresh"
-                   Disabled="@_isLoadingTree"
-                   OnClick="ReloadTreeAsync">
-            Atualizar
-        </MudButton>
     </div>
 </div>
 
@@ -65,6 +57,12 @@ else
                 <div class="d-flex align-center justify-space-between mb-2">
                     <MudText Typo="Typo.subtitle1"><b>Estrutura da Fábrica</b></MudText>
                     <div>
+                        <MudTooltip Text="Recarregar pastas e arquivos do compartilhamento SMB">
+                            <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                           Size="Size.Small"
+                                           Disabled="@_isLoadingTree"
+                                           OnClick="ReloadTreeAsync" />
+                        </MudTooltip>
                         <MudTooltip Text="Expandir todas as pastas">
                             <MudIconButton Icon="@Icons.Material.Filled.UnfoldMore" Size="Size.Small" OnClick="@(() => SetAllExpanded(true))" />
                         </MudTooltip>
@@ -223,12 +221,6 @@ else
                                                Color="@(_showRawJson ? Color.Info : Color.Default)"
                                                Size="Size.Small"
                                                OnClick="@(() => _showRawJson = !_showRawJson)" />
-                            </MudTooltip>
-                            <MudTooltip Text="Abrir pasta no Windows Explorer">
-                                <MudIconButton Icon="@Icons.Material.Filled.Launch"
-                                               Color="Color.Default"
-                                               Size="Size.Small"
-                                               OnClick="@(() => OpenInExplorer(_selectedNode.FullPath))" />
                             </MudTooltip>
                         </div>
                     </div>
@@ -411,12 +403,14 @@ else
                             <MudTable Items="@FilteredFiles" Hover="true" Dense="true" Striped="true" Loading="_isLoadingFiles" Breakpoint="Breakpoint.Sm" RowClassFunc="GetBackupFileRowClass">
                                 <HeaderContent>
                                     <MudTh>Arquivo</MudTh>
+                                    <MudTh>Arquivo original</MudTh>
                                     <MudTh>Descrição da alteração</MudTh>
                                     <MudTh>Tipo</MudTh>
                                     <MudTh>Extensão</MudTh>
                                     <MudTh>Tamanho</MudTh>
                                     <MudTh>Enviado em</MudTh>
-                                    <MudTh>Modificado em</MudTh>
+                                    <MudTh>Data de arquivamento</MudTh>
+                                    <MudTh>Data original do arquivo</MudTh>
                                     <MudTh>Enviado por</MudTh>
                                     <MudTh>Ações</MudTh>
                                 </HeaderContent>
@@ -427,14 +421,17 @@ else
                                                      Color="@(context.IsAllowedByFolderPolicy ? Color.Primary : Color.Warning)"
                                                      Size="Size.Small" />
                                             <div>
-                                                <MudText Typo="Typo.body2" Class="backup-file-name"><b>@context.FileName</b></MudText>
-                                                @if (!string.IsNullOrWhiteSpace(context.OriginalFileName) &&
-                                                     !string.Equals(context.OriginalFileName, context.FileName, StringComparison.OrdinalIgnoreCase))
-                                                {
-                                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block backup-file-name">
-                                                        Original: @context.OriginalFileName
-                                                    </MudText>
-                                                }
+                                                <div class="d-flex align-center gap-1">
+                                                    <MudText Typo="Typo.body2" Class="backup-file-name"><b>@context.FileName</b></MudText>
+                                                    @if (IsLatestBackup(context))
+                                                    {
+                                                        <MudTooltip Text="Arquivo mais recente">
+                                                            <MudIcon Icon="@Icons.Material.Filled.Star"
+                                                                     Size="Size.Small"
+                                                                     Color="Color.Warning" />
+                                                        </MudTooltip>
+                                                    }
+                                                </div>
                                                 @if (context.IsRoutineBackup)
                                                 {
                                                     <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">Backup de Rotina</MudChip>
@@ -442,14 +439,31 @@ else
                                             </div>
                                         </div>
                                     </MudTd>
+                                    <MudTd DataLabel="Arquivo original" Class="backup-file-name-cell">
+                                        @if (!string.IsNullOrWhiteSpace(context.OriginalFileName))
+                                        {
+                                            <MudText Typo="Typo.body2" Class="backup-file-name"><b>@context.OriginalFileName</b></MudText>
+                                            @if (!string.IsNullOrWhiteSpace(context.OriginalFullPath))
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block backup-file-name">
+                                                    @context.OriginalFullPath
+                                                </MudText>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <MudText Typo="Typo.body2">-</MudText>
+                                        }
+                                    </MudTd>
                                     <MudTd DataLabel="Descrição da alteração">@(string.IsNullOrWhiteSpace(context.Description) ? "-" : context.Description)</MudTd>
                                     <MudTd DataLabel="Tipo">
                                         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@context.FileTypeName</MudChip>
                                     </MudTd>
                                     <MudTd DataLabel="Extensão">@context.Extension</MudTd>
                                     <MudTd DataLabel="Tamanho">@context.FormattedSize</MudTd>
-                                    <MudTd DataLabel="Enviado em">@context.CreatedAt.ToString("dd/MM/yyyy HH:mm")</MudTd>
-                                    <MudTd DataLabel="Modificado em">@context.ModifiedAt.ToString("dd/MM/yyyy HH:mm")</MudTd>
+                                    <MudTd DataLabel="Enviado em">@context.UploadedAt.ToString("dd/MM/yyyy HH:mm")</MudTd>
+                                    <MudTd DataLabel="Data de arquivamento">@context.ArchivedAt.ToString("dd/MM/yyyy HH:mm")</MudTd>
+                                    <MudTd DataLabel="Data original do arquivo">@context.OriginalModifiedAt.ToString("dd/MM/yyyy HH:mm")</MudTd>
                                     <MudTd DataLabel="Enviado por">@context.UploadedBy</MudTd>
                                     <MudTd DataLabel="Ações" Style="white-space: nowrap;">
                                         <MudTooltip Text="Baixar cópia local">
@@ -457,12 +471,6 @@ else
                                                            Size="Size.Small"
                                                            Color="Color.Info"
                                                            OnClick="@(() => DownloadFileAsync(context))" />
-                                        </MudTooltip>
-                                        <MudTooltip Text="Abrir arquivo">
-                                            <MudIconButton Icon="@Icons.Material.Filled.OpenInNew"
-                                                           Size="Size.Small"
-                                                           Color="Color.Primary"
-                                                           OnClick="@(() => OpenInExplorer(context.FullPath))" />
                                         </MudTooltip>
                                         @if (CanEdit)
                                         {
@@ -522,17 +530,22 @@ else
                 file.FileTypeName.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase) ||
                 file.Extension.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase) ||
                 file.UploadedBy.Contains(_fileSearch, StringComparison.OrdinalIgnoreCase)))
-            .OrderByDescending(file => file.CreatedAt)
+            .OrderByDescending(file => file.ArchivedAt)
             .ThenBy(file => file.FileName, StringComparer.OrdinalIgnoreCase);
 
-    private string GetBackupFileRowClass(BackupFileItem file, int rowIndex)
+    private bool IsLatestBackup(BackupFileItem file)
     {
         var latestFile = _files
-            .OrderByDescending(item => item.CreatedAt)
+            .OrderByDescending(item => item.ArchivedAt)
             .ThenBy(item => item.FileName, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
 
-        return ReferenceEquals(file, latestFile) ? "latest-backup-file" : string.Empty;
+        return ReferenceEquals(file, latestFile);
+    }
+
+    private string GetBackupFileRowClass(BackupFileItem file, int rowIndex)
+    {
+        return IsLatestBackup(file) ? "latest-backup-file" : string.Empty;
     }
 
     private List<FileTypeDefinition> SelectedRepositoryTypes
@@ -825,6 +838,21 @@ else
 
     private async Task DownloadFileAsync(BackupFileItem file)
     {
+        if (!IsLatestBackup(file))
+        {
+            var parameters = new DialogParameters
+            {
+                ["ContentText"] = "Este arquivo não é o mais recente. Deseja realmente baixar esta versão antiga?",
+                ["ConfirmButtonText"] = "Baixar mesmo assim"
+            };
+
+            var warningDialog = await DialogService.ShowAsync<ConfirmDialog>("Arquivo não é o mais recente", parameters);
+            var warningResult = await warningDialog.Result;
+
+            if (warningResult is null || warningResult.Canceled)
+                return;
+        }
+
         var destination = await FileDialogService.PickSaveLocationAsync(
             $"Salvar cópia de '{file.FileName}'",
             file.FileName,
@@ -875,13 +903,6 @@ else
 
         Snackbar.Add(res.Message, Severity.Success);
         await ReloadTreeAsync();
-    }
-
-    private void OpenInExplorer(string path)
-    {
-        var res = FileDialogService.OpenPathInShell(path);
-        if (!res.Success)
-            Snackbar.Add(res.Message, Severity.Error);
     }
 
     private static string DisplayOrDash(string? value) =>

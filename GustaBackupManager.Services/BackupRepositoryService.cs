@@ -167,9 +167,9 @@ public class BackupRepositoryService(
             return new OperationResult<FolderTreeNode>(false, $"Já existe uma pasta chamada '{cleanName}' neste local.");
 
         var allowsFiles = request.Group is FolderGroupType.Componente or FolderGroupType.Projeto or FolderGroupType.Documentacao;
-        var (extensions, labels) = allowsFiles
+        List<string> extensions = allowsFiles
             ? await ResolveAllowedTypesAsync(request)
-            : ([], []);
+            : [];
 
         if (allowsFiles && extensions.Count == 0)
             return new OperationResult<FolderTreeNode>(false, "Selecione ao menos um tipo de arquivo ou extensão permitida para pastas de Projeto ou Documentação.");
@@ -194,7 +194,6 @@ public class BackupRepositoryService(
                 IconColor = string.IsNullOrWhiteSpace(request.IconColor) ? configuredColor : request.IconColor.Trim(),
                 AllowedFileTypeIds = allowsFiles ? [.. request.AllowedFileTypeIds.Distinct()] : [],
                 AllowedExtensions = allowsFiles ? extensions : [],
-                AllowedTypeLabels = allowsFiles ? labels : [],
                 CreatedAt = now,
                 ModifiedAt = now,
                 CreatedBy = CurrentActor,
@@ -252,9 +251,9 @@ public class BackupRepositoryService(
             return new OperationResult<FolderMetadata>(false, fileTypeValidation.Message);
 
         var allowsFiles = request.Group is FolderGroupType.Componente or FolderGroupType.Projeto or FolderGroupType.Documentacao;
-        var (extensions, labels) = allowsFiles
+        List<string> extensions = allowsFiles
             ? await ResolveAllowedTypesAsync(request)
-            : ([], []);
+            : [];
 
         if (allowsFiles && extensions.Count == 0)
             return new OperationResult<FolderMetadata>(false, "Selecione ao menos um tipo de arquivo ou extensão permitida para pastas de Projeto ou Documentação.");
@@ -290,7 +289,6 @@ public class BackupRepositoryService(
             metadata.IconColor = string.IsNullOrWhiteSpace(request.IconColor) ? configuredColor : request.IconColor.Trim();
             metadata.AllowedFileTypeIds = allowsFiles ? [.. request.AllowedFileTypeIds.Distinct()] : [];
             metadata.AllowedExtensions = allowsFiles ? extensions : [];
-            metadata.AllowedTypeLabels = allowsFiles ? labels : [];
             metadata.ModifiedAt = DateTime.Now;
             metadata.ModifiedBy = CurrentActor;
 
@@ -371,12 +369,13 @@ public class BackupRepositoryService(
                     {
                         FileName = fileName,
                         OriginalFileName = entry?.OriginalFileName ?? string.Empty,
+                        OriginalFullPath = entry?.OriginalFullPath ?? string.Empty,
                         FullPath = filePath,
                         Extension = ext,
                         SizeBytes = info.Length,
-                        CreatedAt = entry?.UploadedAt ?? info.CreationTime,
-                        ModifiedAt = info.LastWriteTime,
-                        Version = entry?.Version ?? "-",
+                        UploadedAt = entry?.UploadedAt ?? info.CreationTime,
+                        ArchivedAt = entry?.ArchivedAt ?? info.CreationTime,
+                        OriginalModifiedAt = entry?.OriginalModifiedAt ?? info.LastWriteTime,
                         Description = entry?.Description ?? string.Empty,
                         IsRoutineBackup = entry?.IsRoutineBackup ?? false,
                         FileTypeName = entry?.FileTypeName ?? ext.ToUpperInvariant(),
@@ -387,7 +386,7 @@ public class BackupRepositoryService(
                 }
 
                 var ordered = items
-                    .OrderByDescending(i => i.ModifiedAt)
+                    .OrderByDescending(i => i.ArchivedAt)
                     .ThenBy(i => i.FileName, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
@@ -426,6 +425,9 @@ public class BackupRepositoryService(
         var sourceInfo = new FileInfo(request.SourceLocalFilePath);
         var sourceExt = sourceInfo.Extension.ToLowerInvariant();
         var now = DateTime.Now;
+        var uploadedAt = now;
+        var archivedAt = request.CustomFileTimestamp ?? now;
+        var originalModifiedAt = sourceInfo.LastWriteTime;
 
         if (metadata.AllowedExtensions.Count > 0 &&
             !metadata.AllowedExtensions.Contains(sourceExt, StringComparer.OrdinalIgnoreCase))
@@ -437,7 +439,7 @@ public class BackupRepositoryService(
         }
 
         var prefix = BuildPrefixFromPathInternal(request.TargetFolderPath, conn.RootPath);
-        var timestamp = (request.CustomFileTimestamp ?? now).ToString("yyyyMMdd_HHmmss");
+        var timestamp = archivedAt.ToString("yyyyMMdd_HHmmss");
         var baseName = string.IsNullOrWhiteSpace(prefix)
             ? timestamp
             : $"{prefix}_{timestamp}";
@@ -465,6 +467,7 @@ public class BackupRepositoryService(
             }
 
             File.Move(temporaryPath, destinationPath, overwrite: false);
+            File.SetLastWriteTime(destinationPath, originalModifiedAt);
 
             var fileTypeName = await GuessFileTypeNameAsync(extension);
 
@@ -473,14 +476,15 @@ public class BackupRepositoryService(
             {
                 FileName = targetFileName,
                 OriginalFileName = sourceInfo.Name,
+                OriginalFullPath = sourceInfo.FullName,
                 Extension = extension,
-                Version = "1.0",
                 Description = request.Description?.Trim() ?? string.Empty,
                 IsRoutineBackup = request.IsRoutineBackup,
                 FileTypeName = fileTypeName,
                 UploadedBy = CurrentActor,
-                UploadedAt = now,
-                ModifiedAt = now,
+                UploadedAt = uploadedAt,
+                ArchivedAt = archivedAt,
+                OriginalModifiedAt = originalModifiedAt,
                 SizeBytes = sourceInfo.Length
             });
 
@@ -492,12 +496,13 @@ public class BackupRepositoryService(
             {
                 FileName = targetFileName,
                 OriginalFileName = sourceInfo.Name,
+                OriginalFullPath = sourceInfo.FullName,
                 FullPath = destinationPath,
                 Extension = extension,
                 SizeBytes = sourceInfo.Length,
-                CreatedAt = now,
-                ModifiedAt = now,
-                Version = "1.0",
+                UploadedAt = uploadedAt,
+                ArchivedAt = archivedAt,
+                OriginalModifiedAt = originalModifiedAt,
                 Description = request.Description?.Trim() ?? string.Empty,
                 IsRoutineBackup = request.IsRoutineBackup,
                 FileTypeName = fileTypeName,
@@ -631,42 +636,15 @@ public class BackupRepositoryService(
             var (metadata, hasMeta) = ReadMetadataInternal(currentDir, isRootChild);
             if (hasMeta && metadata.AllowFileStorage && metadata.AllowedFileTypeIds.Contains(fileTypeId))
             {
-                var customExtensions = new List<string>();
-                foreach (var label in metadata.AllowedTypeLabels)
-                {
-                    if (label.StartsWith("Personalizado (", StringComparison.OrdinalIgnoreCase) && label.EndsWith(')'))
-                    {
-                        var inside = label["Personalizado (".Length..^1];
-                        customExtensions.AddRange(
-                            inside.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                  .Select(e => e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant()));
-                    }
-                }
+                var newExtensions = metadata.AllowedFileTypeIds
+                    .Distinct()
+                    .Where(typesById.ContainsKey)
+                    .SelectMany(id => typesById[id].GetNormalizedExtensions())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(extension => extension, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
-                var newExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var newLabels = new List<string>();
-
-                foreach (var linkedId in metadata.AllowedFileTypeIds.Distinct())
-                {
-                    if (typesById.TryGetValue(linkedId, out var ft))
-                    {
-                        var exts = ft.GetNormalizedExtensions();
-                        foreach (var ext in exts)
-                            newExtensions.Add(ext);
-
-                        newLabels.Add($"{ft.Name} ({string.Join(", ", exts)})");
-                    }
-                }
-
-                var distinctCustom = customExtensions.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                foreach (var ext in distinctCustom)
-                    newExtensions.Add(ext);
-
-                if (distinctCustom.Count > 0)
-                    newLabels.Add($"Personalizado ({string.Join(", ", distinctCustom)})");
-
-                metadata.AllowedExtensions = newExtensions.OrderBy(e => e, StringComparer.OrdinalIgnoreCase).ToList();
-                metadata.AllowedTypeLabels = newLabels;
+                metadata.AllowedExtensions = newExtensions;
                 metadata.ModifiedAt = DateTime.Now;
                 metadata.ModifiedBy = CurrentActor;
 
@@ -1261,10 +1239,9 @@ public class BackupRepositoryService(
         }
     }
 
-    private async Task<(List<string> Extensions, List<string> Labels)> ResolveAllowedTypesAsync(FolderEditRequest request)
+    private async Task<List<string>> ResolveAllowedTypesAsync(FolderEditRequest request)
     {
         var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var labels = new List<string>();
 
         if (request.AllowedFileTypeIds.Count > 0)
         {
@@ -1276,8 +1253,6 @@ public class BackupRepositoryService(
                 var exts = ft.GetNormalizedExtensions();
                 foreach (var ext in exts)
                     extensions.Add(ext);
-
-                labels.Add($"{ft.Name} ({string.Join(", ", exts)})");
             }
         }
 
@@ -1297,13 +1272,9 @@ public class BackupRepositoryService(
                 request.ProjectInfo.AllowedExtensions = string.Join(";", projectExtensions);
             }
 
-            if (selectedType is not null)
-                labels.Add($"{selectedType.Name} ({string.Join(", ", projectExtensions)})");
-            else if (projectExtensions.Count > 0)
-                labels.Add($"Projeto ({string.Join(", ", projectExtensions)})");
         }
 
-        return (extensions.OrderBy(e => e, StringComparer.OrdinalIgnoreCase).ToList(), labels);
+        return extensions.OrderBy(e => e, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private async Task<string> GuessFileTypeNameAsync(string extension)

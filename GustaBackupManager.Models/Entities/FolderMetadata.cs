@@ -136,14 +136,6 @@ public class ProjectMetadataDetails
 {
     public int? FileTypeId { get; set; }
 
-    [JsonPropertyName("ProjectCatalogId")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public int? LegacyProjectCatalogId
-    {
-        get => null;
-        set => FileTypeId ??= value;
-    }
-
     public ProjectCategory? Category { get; set; }
     public string ProjectName { get; set; } = string.Empty;
     public string AllowedExtensions { get; set; } = string.Empty;
@@ -192,29 +184,57 @@ public class FolderMetadata
     [JsonIgnore]
     public bool AllowFileStorage => Group is FolderGroupType.Componente or FolderGroupType.Projeto or FolderGroupType.Documentacao;
 
+    [JsonIgnore]
     public List<int> AllowedFileTypeIds { get; set; } = [];
+
+    [JsonIgnore]
     public List<string> AllowedExtensions { get; set; } = [];
-    public List<string> AllowedTypeLabels { get; set; } = [];
+
+    [JsonPropertyName(nameof(AllowedFileTypeIds))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<int>? SerializedAllowedFileTypeIds
+    {
+        get => AllowFileStorage ? AllowedFileTypeIds : null;
+        set => AllowedFileTypeIds = value ?? [];
+    }
+
+    [JsonPropertyName(nameof(AllowedExtensions))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? SerializedAllowedExtensions
+    {
+        get => AllowFileStorage ? AllowedExtensions : null;
+        set => AllowedExtensions = value ?? [];
+    }
 
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime ModifiedAt { get; set; } = DateTime.Now;
     public string CreatedBy { get; set; } = string.Empty;
     public string ModifiedBy { get; set; } = string.Empty;
 
+    [JsonIgnore]
     public List<BackupFileMetadataEntry> Files { get; set; } = [];
+
+    [JsonPropertyName(nameof(Files))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<BackupFileMetadataEntry>? SerializedFiles
+    {
+        get => AllowFileStorage ? Files : null;
+        set => Files = value ?? [];
+    }
 }
 
 public class BackupFileMetadataEntry
 {
     public string FileName { get; set; } = string.Empty;
     public string OriginalFileName { get; set; } = string.Empty;
+    public string OriginalFullPath { get; set; } = string.Empty;
     public string Extension { get; set; } = string.Empty;
-    public string Version { get; set; } = "1.0";
     public string Description { get; set; } = string.Empty;
     public bool IsRoutineBackup { get; set; }
     public string FileTypeName { get; set; } = string.Empty;
     public string UploadedBy { get; set; } = string.Empty;
-    public DateTime UploadedAt { get; set; } = DateTime.Now;
-    public DateTime ModifiedAt { get; set; } = DateTime.Now;
+    public DateTime UploadedAt { get; set; }
+    public DateTime ArchivedAt { get; set; }
+    public DateTime OriginalModifiedAt { get; set; }
     public long SizeBytes { get; set; }
 }

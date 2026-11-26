@@ -4,12 +4,13 @@ public class BackupFileItem
 {
     public string FileName { get; set; } = string.Empty;
     public string OriginalFileName { get; set; } = string.Empty;
+    public string OriginalFullPath { get; set; } = string.Empty;
     public string FullPath { get; set; } = string.Empty;
     public string Extension { get; set; } = string.Empty;
     public long SizeBytes { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime ModifiedAt { get; set; }
-    public string Version { get; set; } = "-";
+    public DateTime UploadedAt { get; set; }
+    public DateTime ArchivedAt { get; set; }
+    public DateTime OriginalModifiedAt { get; set; }
     public string Description { get; set; } = string.Empty;
     public bool IsRoutineBackup { get; set; }
     public string FileTypeName { get; set; } = string.Empty;

@@ -38,7 +38,7 @@ namespace GustaBackupManager
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1280, 820);
             Controls.Add(BlazorWebView);
-            Icon = (Icon?)resources.GetObject("$this.Icon");
+            Icon = (Icon)resources?.GetObject("$this.Icon");
             Margin = new Padding(3, 4, 3, 4);
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;

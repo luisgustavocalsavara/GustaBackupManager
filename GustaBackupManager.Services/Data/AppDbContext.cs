@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using GustaBackupManager.Models.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,9 +62,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
     }
 
-    // New password hashes use PBKDF2 with an individual random salt.
-    // The legacy SHA-256 format is still recognized by VerifyPassword so existing
-    // installations can migrate transparently after a successful login.
     private const int PasswordHashIterations = 600_000;
     private const int PasswordSaltSize = 16;
     private const int PasswordHashSize = 32;
@@ -85,34 +81,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         return $"PBKDF2-SHA256${PasswordHashIterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
     }
 
-    public static bool VerifyPassword(string password, string storedHash, out bool needsUpgrade)
+    public static bool VerifyPassword(string password, string storedHash)
     {
-        needsUpgrade = false;
         if (string.IsNullOrEmpty(password) || string.IsNullOrEmpty(storedHash))
             return false;
 
-        // Legacy v7 hashes: SHA-256 with a fixed salt.
-        if (!storedHash.StartsWith("PBKDF2-SHA256$", StringComparison.Ordinal))
-        {
-            var legacy = SHA256.HashData(Encoding.UTF8.GetBytes($"GustaBackupSalt::{password}"));
-            byte[] stored;
-            try { stored = Convert.FromHexString(storedHash); }
-            catch (FormatException) { return false; }
-
-            var valid = stored.Length == legacy.Length && CryptographicOperations.FixedTimeEquals(stored, legacy);
-            needsUpgrade = valid;
-            return valid;
-        }
-
         var parts = storedHash.Split('$');
-        if (parts.Length != 4 || !int.TryParse(parts[1], out var iterations) || iterations < 100_000)
+        if (parts.Length != 4 || parts[0] != "PBKDF2-SHA256" ||
+            !int.TryParse(parts[1], out var iterations) || iterations < 100_000)
             return false;
 
         try
         {
             var salt = Convert.FromBase64String(parts[2]);
             var expected = Convert.FromBase64String(parts[3]);
-            if (salt.Length < 16 || expected.Length != PasswordHashSize)
+            if (salt.Length < PasswordSaltSize || expected.Length != PasswordHashSize)
                 return false;
 
             var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
@@ -131,56 +114,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         using var db = factory.CreateDbContext();
 
         db.Database.EnsureCreated();
-
-        // Garante criacao da tabela mesmo em bancos SQLite ja existentes de versoes anteriores
-        db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE IF NOT EXISTS ""ConfiguracaoCategoriasPasta"" (
-                ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_ConfiguracaoCategoriasPasta"" PRIMARY KEY AUTOINCREMENT,
-                ""CategoryKey"" TEXT NOT NULL,
-                ""Group"" TEXT NOT NULL,
-                ""SubCategoryName"" TEXT NOT NULL,
-                ""DisplayName"" TEXT NOT NULL,
-                ""IconKey"" TEXT NOT NULL,
-                ""IconColor"" TEXT NOT NULL,
-                ""UpdatedAt"" TEXT NOT NULL
-            );");
-
-        db.Database.ExecuteSqlRaw(@"
-            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ConfiguracaoCategoriasPasta_CategoryKey""
-            ON ""ConfiguracaoCategoriasPasta"" (""CategoryKey"");");
-
-        db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE IF NOT EXISTS ""IconesPersonalizados"" (
-                ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_IconesPersonalizados"" PRIMARY KEY AUTOINCREMENT,
-                ""Key"" TEXT NOT NULL,
-                ""Label"" TEXT NOT NULL,
-                ""SvgMarkup"" TEXT NOT NULL,
-                ""SourceType"" TEXT NOT NULL,
-                ""CreatedAt"" TEXT NOT NULL
-            );");
-
-        db.Database.ExecuteSqlRaw(@"
-            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_IconesPersonalizados_Key""
-            ON ""IconesPersonalizados"" (""Key"");");
-
-        db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE IF NOT EXISTS ""CatalogoDispositivos"" (
-                ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_CatalogoDispositivos"" PRIMARY KEY AUTOINCREMENT,
-                ""Category"" TEXT NOT NULL,
-                ""DeviceType"" TEXT NOT NULL,
-                ""Manufacturer"" TEXT NOT NULL,
-                ""Model"" TEXT NOT NULL,
-                ""Description"" TEXT NOT NULL,
-                ""CreatedAt"" TEXT NOT NULL,
-                ""UpdatedAt"" TEXT NOT NULL
-            );");
-
-        db.Database.ExecuteSqlRaw(@"
-            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_CatalogoDispositivos_Category_DeviceType_Manufacturer_Model""
-            ON ""CatalogoDispositivos"" (""Category"", ""DeviceType"", ""Manufacturer"", ""Model"");");
-
-        RemoveRepositoryCategoryColumn(db);
-        MigrateProjectCatalogToFileTypes(db);
 
         if (!db.Users.Any())
         {
@@ -235,9 +168,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             db.SaveChanges();
         }
 
-        db.Database.ExecuteSqlRaw(
-            "DELETE FROM \"ConfiguracaoCategoriasPasta\" WHERE \"Group\" = 'Painel' OR \"CategoryKey\" IN ('Painel', 'Diversas');");
-
         var existingKeys = db.CategoryAppearances
             .Select(c => c.CategoryKey)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -253,45 +183,4 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         }
     }
 
-    private static void RemoveRepositoryCategoryColumn(AppDbContext db)
-    {
-        var hasCategoryColumn = db.Database.SqlQuery<int>(
-                $"SELECT COUNT(*) AS Value FROM pragma_table_info('TiposArquivo') WHERE name = 'Category'")
-            .Single() > 0;
-        if (hasCategoryColumn)
-            db.Database.ExecuteSqlRaw("ALTER TABLE \"TiposArquivo\" DROP COLUMN \"Category\";");
-    }
-
-    private static void MigrateProjectCatalogToFileTypes(AppDbContext db)
-    {
-        var hasProjectCatalog = db.Database.SqlQuery<int>(
-                $"SELECT COUNT(*) AS Value FROM sqlite_master WHERE type = 'table' AND name = 'CatalogoProjetos'")
-            .Single() > 0;
-        if (!hasProjectCatalog)
-            return;
-
-        db.Database.ExecuteSqlRaw(@"
-            INSERT INTO ""TiposArquivo"" (""Name"", ""Extensions"", ""Description"", ""IconKey"", ""IsActive"", ""CreatedAt"")
-            SELECT p.""Name"",
-                   p.""AllowedExtensions"", 
-                   p.""Description"",
-                   CASE p.""Category""
-                       WHEN 'Clp' THEN 'Memory'
-                       WHEN 'Ihm' THEN 'DesktopWindows'
-                       WHEN 'Rede' THEN 'Hub'
-                       ELSE 'Description'
-                   END,
-                   1,
-                   p.""CreatedAt""
-            FROM ""CatalogoProjetos"" AS p
-            WHERE p.""Id"" = (
-                SELECT MIN(p2.""Id"") FROM ""CatalogoProjetos"" AS p2
-                WHERE lower(p2.""Name"") = lower(p.""Name"")
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM ""TiposArquivo"" AS f
-                WHERE lower(f.""Name"") = lower(p.""Name"")
-            );");
-        db.Database.ExecuteSqlRaw("DROP TABLE \"CatalogoProjetos\";");
-    }
 }
